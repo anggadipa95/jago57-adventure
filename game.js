@@ -1,10 +1,6 @@
 import Phaser from "phaser";
 import { createClient } from "@supabase/supabase-js";
 
-// =====================================================
-// JAGO57 ADVENTURE
-// =====================================================
-
 const GAME_WIDTH = 1000;
 const GAME_HEIGHT = 600;
 const WORLD_HEIGHT = 900;
@@ -18,6 +14,7 @@ const PLAYER_FEET_OFFSET = 4;
 
 const BOAR_SPEED = 90;
 const BOAR_VISUAL_SIZE = 100;
+const BOSS_VISUAL_SIZE = 200;
 
 const PROGRESS_KEY = "jago57-adventure-progress";
 const PLAYER_KEY = "jago57-player-name";
@@ -27,6 +24,7 @@ const SOUND_KEY = "jago57-sound-enabled";
 const IS_TOUCH_DEVICE =
     "ontouchstart" in window ||
     navigator.maxTouchPoints > 0;
+
 
 // =====================================================
 // SUPABASE
@@ -53,666 +51,38 @@ const supabase =
 
 let onlineStatus = "CHECKING";
 
-// =====================================================
-// LOCAL SAVE
-// =====================================================
-
-function defaultProgress() {
-    return {
-        world11: true,
-        world12: false
-    };
-}
-
-function loadProgress() {
-    try {
-        return {
-            ...defaultProgress(),
-            ...JSON.parse(
-                localStorage.getItem(PROGRESS_KEY) || "{}"
-            )
-        };
-    } catch {
-        return defaultProgress();
-    }
-}
-
-function saveProgress(progress) {
-    try {
-        localStorage.setItem(
-            PROGRESS_KEY,
-            JSON.stringify(progress)
-        );
-    } catch {}
-}
-
-function getPlayerName() {
-    try {
-        return (
-            localStorage.getItem(PLAYER_KEY) || ""
-        ).trim();
-    } catch {
-        return "";
-    }
-}
-
-function savePlayerName(name) {
-    const clean =
-        String(name || "")
-            .trim()
-            .replace(/\s+/g, " ")
-            .slice(0, 12)
-            .toUpperCase();
-
-    try {
-        localStorage.setItem(
-            PLAYER_KEY,
-            clean
-        );
-    } catch {}
-
-    return clean;
-}
-
-// =====================================================
-// LOCAL LEADERBOARD
-// =====================================================
-
-function loadLocalLeaderboard() {
-    try {
-        const data =
-            JSON.parse(
-                localStorage.getItem(
-                    LOCAL_LEADERBOARD_KEY
-                ) || "[]"
-            );
-
-        return Array.isArray(data)
-            ? data
-            : [];
-    } catch {
-        return [];
-    }
-}
-
-function saveLocalLeaderboard(data) {
-    try {
-        localStorage.setItem(
-            LOCAL_LEADERBOARD_KEY,
-            JSON.stringify(data)
-        );
-    } catch {}
-}
-
-function submitLocalScore(
-    name,
-    score,
-    levelId
-) {
-    const player =
-        String(name || "PLAYER")
-            .trim()
-            .slice(0, 12)
-            .toUpperCase();
-
-    const leaderboard =
-        loadLocalLeaderboard();
-
-    const existing =
-        leaderboard.find(
-            item =>
-                String(item.name || "")
-                    .toUpperCase() ===
-                player
-        );
-
-    if (existing) {
-        if (
-            score >
-            Number(existing.score || 0)
-        ) {
-            existing.score = score;
-            existing.levelId = levelId;
-        }
-    } else {
-        leaderboard.push({
-            name: player,
-            score,
-            levelId
-        });
-    }
-
-    leaderboard.sort(
-        (a, b) =>
-            Number(b.score || 0) -
-            Number(a.score || 0)
-    );
-
-    const top10 =
-        leaderboard.slice(0, 10);
-
-    saveLocalLeaderboard(top10);
-
-    return top10;
-}
-
-function getLocalBestScore(name) {
-    const target =
-        String(name || "")
-            .toUpperCase();
-
-    const entry =
-        loadLocalLeaderboard().find(
-            item =>
-                String(item.name || "")
-                    .toUpperCase() ===
-                target
-        );
-
-    return entry
-        ? Number(entry.score || 0)
-        : 0;
-}
 
 // =====================================================
 // SOUND
 // =====================================================
 
-function loadSoundEnabled() {
-    try {
-        const saved =
-            localStorage.getItem(
-                SOUND_KEY
-            );
-
-        return saved === null
-            ? true
-            : saved === "true";
-    } catch {
-        return true;
-    }
-}
-
-function saveSoundEnabled() {
-    try {
-        localStorage.setItem(
-            SOUND_KEY,
-            String(soundEnabled)
-        );
-    } catch {}
-}
-
 let audioContext = null;
-let soundEnabled =
-    loadSoundEnabled();
+let soundEnabled = loadSoundEnabled();
 
-function unlockAudio() {
-    if (!soundEnabled) return;
-
-    const AudioContextClass =
-        window.AudioContext ||
-        window.webkitAudioContext;
-
-    if (!AudioContextClass) return;
-
-    if (!audioContext) {
-        audioContext =
-            new AudioContextClass();
-    }
-
-    if (
-        audioContext.state ===
-        "suspended"
-    ) {
-        audioContext.resume();
-    }
-}
-
-function playTone(
-    startFrequency,
-    duration = 0.1,
-    type = "sine",
-    volume = 0.04,
-    endFrequency = null,
-    delay = 0
-) {
-    if (!soundEnabled) return;
-
-    unlockAudio();
-
-    if (!audioContext) return;
-
-    const now =
-        audioContext.currentTime +
-        delay;
-
-    const oscillator =
-        audioContext.createOscillator();
-
-    const gain =
-        audioContext.createGain();
-
-    oscillator.type = type;
-
-    oscillator.frequency.setValueAtTime(
-        startFrequency,
-        now
-    );
-
-    if (endFrequency !== null) {
-        oscillator.frequency
-            .exponentialRampToValueAtTime(
-                Math.max(
-                    1,
-                    endFrequency
-                ),
-                now + duration
-            );
-    }
-
-    gain.gain.setValueAtTime(
-        0.0001,
-        now
-    );
-
-    gain.gain.exponentialRampToValueAtTime(
-        Math.max(
-            0.0001,
-            volume
-        ),
-        now + 0.015
-    );
-
-    gain.gain.exponentialRampToValueAtTime(
-        0.0001,
-        now + duration
-    );
-
-    oscillator.connect(gain);
-
-    gain.connect(
-        audioContext.destination
-    );
-
-    oscillator.start(now);
-
-    oscillator.stop(
-        now + duration + 0.03
-    );
-}
-
-const SFX = {
-    button() {
-        playTone(
-            380,
-            0.06,
-            "square",
-            0.025,
-            520
-        );
-    },
-
-    jump() {
-        playTone(
-            330,
-            0.11,
-            "square",
-            0.03,
-            650
-        );
-    },
-
-    token() {
-        playTone(
-            720,
-            0.08,
-            "sine",
-            0.04,
-            950
-        );
-
-        playTone(
-            980,
-            0.09,
-            "sine",
-            0.035,
-            1250,
-            0.07
-        );
-    },
-
-    stomp() {
-        playTone(
-            190,
-            0.11,
-            "square",
-            0.05,
-            95
-        );
-    },
-
-    hit() {
-        playTone(
-            210,
-            0.2,
-            "sawtooth",
-            0.045,
-            75
-        );
-    },
-
-    checkpoint() {
-        playTone(
-            440,
-            0.12,
-            "sine",
-            0.04,
-            550
-        );
-
-        playTone(
-            660,
-            0.15,
-            "sine",
-            0.045,
-            880,
-            0.16
-        );
-    },
-
-    finish() {
-        playTone(
-            440,
-            0.13,
-            "triangle",
-            0.04,
-            550
-        );
-
-        playTone(
-            550,
-            0.13,
-            "triangle",
-            0.04,
-            660,
-            0.12
-        );
-
-        playTone(
-            660,
-            0.13,
-            "triangle",
-            0.04,
-            880,
-            0.24
-        );
-
-        playTone(
-            880,
-            0.3,
-            "triangle",
-            0.05,
-            1100,
-            0.36
-        );
-    }
-};
-
-// =====================================================
-// SUPABASE FUNCTIONS
-// =====================================================
-
-async function testOnlineConnection() {
-    if (!supabase) {
-        onlineStatus = "OFFLINE";
-        return false;
-    }
-
-    try {
-        const { error } =
-            await supabase
-                .from("leaderboard")
-                .select("id")
-                .limit(1);
-
-        if (error) throw error;
-
-        onlineStatus = "ONLINE";
-
-        return true;
-    } catch (error) {
-        console.error(
-            "Supabase connection error:",
-            error
-        );
-
-        onlineStatus = "OFFLINE";
-
-        return false;
-    }
-}
-
-async function submitOnlineScore(
-    playerName,
-    score,
-    levelId
-) {
-    if (!supabase) return false;
-
-    try {
-        const cleanName =
-            String(
-                playerName || "PLAYER"
-            )
-                .trim()
-                .slice(0, 12)
-                .toUpperCase();
-
-        const cleanScore =
-            Math.max(
-                0,
-                Math.floor(
-                    Number(score) || 0
-                )
-            );
-
-        const { error } =
-            await supabase
-                .from("leaderboard")
-                .insert({
-                    player_name:
-                        cleanName,
-
-                    score:
-                        cleanScore,
-
-                    level_id:
-                        levelId
-                });
-
-        if (error) throw error;
-
-        onlineStatus = "ONLINE";
-
-        return true;
-    } catch (error) {
-        console.error(
-            "Score upload error:",
-            error
-        );
-
-        onlineStatus = "OFFLINE";
-
-        return false;
-    }
-}
-
-async function getOnlineBestScore(
-    playerName
-) {
-    if (!supabase) return null;
-
-    try {
-        const cleanName =
-            String(
-                playerName ||
-                "PLAYER"
-            )
-                .trim()
-                .slice(0, 12)
-                .toUpperCase();
-
-        const { data, error } =
-            await supabase
-                .from("leaderboard")
-                .select("score")
-                .eq(
-                    "player_name",
-                    cleanName
-                )
-                .order(
-                    "score",
-                    {
-                        ascending: false
-                    }
-                )
-                .limit(1);
-
-        if (error) throw error;
-
-        onlineStatus = "ONLINE";
-
-        return data?.length
-            ? Number(
-                  data[0].score || 0
-              )
-            : 0;
-    } catch (error) {
-        console.error(
-            "Best score error:",
-            error
-        );
-
-        onlineStatus = "OFFLINE";
-
-        return null;
-    }
-}
-
-async function getOnlineLeaderboard() {
-    if (!supabase) return null;
-
-    try {
-        const { data, error } =
-            await supabase
-                .from("leaderboard")
-                .select(
-                    "player_name, score, level_id, created_at"
-                )
-                .order(
-                    "score",
-                    {
-                        ascending: false
-                    }
-                )
-                .limit(100);
-
-        if (error) throw error;
-
-        onlineStatus = "ONLINE";
-
-        const unique =
-            new Map();
-
-        for (
-            const row of data || []
-        ) {
-            const name =
-                String(
-                    row.player_name ||
-                    "PLAYER"
-                )
-                    .trim()
-                    .toUpperCase();
-
-            const score =
-                Number(
-                    row.score || 0
-                );
-
-            const existing =
-                unique.get(name);
-
-            if (
-                !existing ||
-                score >
-                existing.score
-            ) {
-                unique.set(
-                    name,
-                    {
-                        name,
-                        score,
-                        levelId:
-                            row.level_id
-                    }
-                );
-            }
-        }
-
-        return Array
-            .from(
-                unique.values()
-            )
-            .sort(
-                (a, b) =>
-                    b.score -
-                    a.score
-            )
-            .slice(0, 10);
-    } catch (error) {
-        console.error(
-            "Leaderboard error:",
-            error
-        );
-
-        onlineStatus = "OFFLINE";
-
-        return null;
-    }
-}
 
 // =====================================================
 // LEVEL DATA
 // =====================================================
 
 const LEVELS = {
+
     "1-1": {
-        name:
-            "WORLD 1-1",
 
-        subtitle:
-            "GREEN VALLEY",
+        name: "WORLD 1-1",
+        subtitle: "GREEN VALLEY",
 
-        worldWidth:
-            5000,
+        worldWidth: 5000,
 
-        startX:
-            150,
-
-        startY:
-            430,
+        startX: 150,
+        startY: 430,
 
         gaps: [
             [1500, 1660],
             [3300, 3460]
         ],
 
-        checkpointX:
-            2500,
-
-        finishX:
-            4750,
+        checkpointX: 2500,
+        finishX: 4750,
 
         platforms: [
             [520, 410, 260],
@@ -751,23 +121,19 @@ const LEVELS = {
             [2850, 510, 2720, 3120],
             [4200, 510, 4050, 4500]
         ]
+
     },
 
+
     "1-2": {
-        name:
-            "WORLD 1-2",
 
-        subtitle:
-            "WILD RIDGE",
+        name: "WORLD 1-2",
+        subtitle: "WILD RIDGE",
 
-        worldWidth:
-            5400,
+        worldWidth: 5400,
 
-        startX:
-            150,
-
-        startY:
-            430,
+        startX: 150,
+        startY: 430,
 
         gaps: [
             [1100, 1280],
@@ -775,11 +141,8 @@ const LEVELS = {
             [4000, 4200]
         ],
 
-        checkpointX:
-            2900,
-
-        finishX:
-            5150,
+        checkpointX: 2900,
+        finishX: 5150,
 
         platforms: [
             [480, 410, 240],
@@ -822,11 +185,1206 @@ const LEVELS = {
             [3250, 510, 3050, 3800],
             [4550, 510, 4300, 4950]
         ]
+
+    },
+
+
+    "1-3": {
+
+        name: "WORLD 1-3",
+        subtitle: "BOAR FORTRESS",
+
+        worldWidth: 6500,
+
+        startX: 150,
+        startY: 430,
+
+        gaps: [
+            [1200, 1370],
+            [2600, 2790],
+            [4100, 4300]
+        ],
+
+        checkpointX: 5000,
+        finishX: 6250,
+
+        platforms: [
+            [450, 405, 230],
+            [780, 340, 220],
+            [1050, 390, 190],
+            [1480, 380, 240],
+            [1820, 310, 220],
+            [2200, 385, 260],
+            [2480, 330, 170],
+            [2920, 390, 230],
+            [3260, 325, 240],
+            [3600, 395, 250],
+            [3950, 320, 220],
+            [4470, 390, 260],
+            [4780, 330, 220],
+            [5200, 390, 220]
+        ],
+
+        tokens: [
+            [450, 340],
+            [780, 275],
+            [1050, 325],
+            [1290, 430],
+            [1480, 315],
+            [1820, 245],
+            [2200, 320],
+            [2700, 430],
+            [2920, 325],
+            [3260, 260],
+            [3600, 330],
+            [3950, 255],
+            [4200, 430],
+            [4470, 325],
+            [4780, 265],
+            [5100, 430]
+        ],
+
+        boars: [
+            [800, 510, 650, 1100],
+            [1750, 510, 1450, 2350],
+            [3150, 510, 2900, 3800],
+            [4600, 510, 4400, 4900]
+        ],
+
+        boss: {
+            x: 5650,
+            y: 485,
+            left: 5400,
+            right: 6000,
+            hp: 5
+        }
+
     }
+
 };
 
+
 // =====================================================
-// BUTTON HELPER
+// LOCAL SAVE
+// =====================================================
+
+function defaultProgress() {
+
+    return {
+        world11: true,
+        world12: false,
+        world13: false
+    };
+
+}
+
+
+function loadProgress() {
+
+    try {
+
+        return {
+            ...defaultProgress(),
+            ...JSON.parse(
+                localStorage.getItem(
+                    PROGRESS_KEY
+                ) || "{}"
+            )
+        };
+
+    }
+
+    catch {
+
+        return defaultProgress();
+
+    }
+
+}
+
+
+function saveProgress(
+    progress
+) {
+
+    try {
+
+        localStorage.setItem(
+            PROGRESS_KEY,
+            JSON.stringify(
+                progress
+            )
+        );
+
+    }
+
+    catch {}
+
+}
+
+
+function getPlayerName() {
+
+    try {
+
+        return (
+            localStorage.getItem(
+                PLAYER_KEY
+            ) || ""
+        ).trim();
+
+    }
+
+    catch {
+
+        return "";
+
+    }
+
+}
+
+
+function savePlayerName(
+    name
+) {
+
+    const clean =
+        String(
+            name || ""
+        )
+            .trim()
+            .replace(
+                /\s+/g,
+                " "
+            )
+            .slice(
+                0,
+                12
+            )
+            .toUpperCase();
+
+
+    try {
+
+        localStorage.setItem(
+            PLAYER_KEY,
+            clean
+        );
+
+    }
+
+    catch {}
+
+
+    return clean;
+
+}
+
+
+// =====================================================
+// LOCAL LEADERBOARD
+// =====================================================
+
+function loadLocalLeaderboard() {
+
+    try {
+
+        const data =
+            JSON.parse(
+                localStorage.getItem(
+                    LOCAL_LEADERBOARD_KEY
+                ) || "[]"
+            );
+
+
+        return Array.isArray(
+            data
+        )
+            ? data
+            : [];
+
+    }
+
+    catch {
+
+        return [];
+
+    }
+
+}
+
+
+function saveLocalLeaderboard(
+    data
+) {
+
+    try {
+
+        localStorage.setItem(
+            LOCAL_LEADERBOARD_KEY,
+            JSON.stringify(
+                data
+            )
+        );
+
+    }
+
+    catch {}
+
+}
+
+
+function submitLocalScore(
+    name,
+    score,
+    levelId
+) {
+
+    const player =
+        String(
+            name ||
+            "PLAYER"
+        )
+            .trim()
+            .slice(
+                0,
+                12
+            )
+            .toUpperCase();
+
+
+    const leaderboard =
+        loadLocalLeaderboard();
+
+
+    const existing =
+        leaderboard.find(
+            item =>
+                String(
+                    item.name ||
+                    ""
+                ).toUpperCase() ===
+                player
+        );
+
+
+    if (
+        existing
+    ) {
+
+        if (
+            score >
+            Number(
+                existing.score ||
+                0
+            )
+        ) {
+
+            existing.score =
+                score;
+
+            existing.levelId =
+                levelId;
+
+        }
+
+    }
+
+    else {
+
+        leaderboard.push({
+            name: player,
+            score,
+            levelId
+        });
+
+    }
+
+
+    leaderboard.sort(
+        (
+            a,
+            b
+        ) =>
+            Number(
+                b.score ||
+                0
+            ) -
+            Number(
+                a.score ||
+                0
+            )
+    );
+
+
+    const top10 =
+        leaderboard.slice(
+            0,
+            10
+        );
+
+
+    saveLocalLeaderboard(
+        top10
+    );
+
+
+    return top10;
+
+}
+
+
+function getLocalBestScore(
+    name
+) {
+
+    const target =
+        String(
+            name ||
+            ""
+        ).toUpperCase();
+
+
+    const entry =
+        loadLocalLeaderboard()
+            .find(
+                item =>
+                    String(
+                        item.name ||
+                        ""
+                    ).toUpperCase() ===
+                    target
+            );
+
+
+    return entry
+        ? Number(
+            entry.score ||
+            0
+        )
+        : 0;
+
+}
+
+
+// =====================================================
+// SOUND SAVE
+// =====================================================
+
+function loadSoundEnabled() {
+
+    try {
+
+        const saved =
+            localStorage.getItem(
+                SOUND_KEY
+            );
+
+
+        return saved === null
+            ? true
+            : saved === "true";
+
+    }
+
+    catch {
+
+        return true;
+
+    }
+
+}
+
+
+function saveSoundEnabled() {
+
+    try {
+
+        localStorage.setItem(
+            SOUND_KEY,
+            String(
+                soundEnabled
+            )
+        );
+
+    }
+
+    catch {}
+
+}
+
+
+// =====================================================
+// AUDIO
+// =====================================================
+
+function unlockAudio() {
+
+    if (
+        !soundEnabled
+    ) {
+
+        return;
+
+    }
+
+
+    const AudioContextClass =
+        window.AudioContext ||
+        window.webkitAudioContext;
+
+
+    if (
+        !AudioContextClass
+    ) {
+
+        return;
+
+    }
+
+
+    if (
+        !audioContext
+    ) {
+
+        audioContext =
+            new AudioContextClass();
+
+    }
+
+
+    if (
+        audioContext.state ===
+        "suspended"
+    ) {
+
+        audioContext.resume();
+
+    }
+
+}
+
+
+function playTone(
+    startFrequency,
+    duration = 0.1,
+    type = "sine",
+    volume = 0.04,
+    endFrequency = null,
+    delay = 0
+) {
+
+    if (
+        !soundEnabled
+    ) {
+
+        return;
+
+    }
+
+
+    unlockAudio();
+
+
+    if (
+        !audioContext
+    ) {
+
+        return;
+
+    }
+
+
+    const now =
+        audioContext.currentTime +
+        delay;
+
+
+    const oscillator =
+        audioContext.createOscillator();
+
+
+    const gain =
+        audioContext.createGain();
+
+
+    oscillator.type =
+        type;
+
+
+    oscillator.frequency
+        .setValueAtTime(
+            startFrequency,
+            now
+        );
+
+
+    if (
+        endFrequency !==
+        null
+    ) {
+
+        oscillator.frequency
+            .exponentialRampToValueAtTime(
+                Math.max(
+                    1,
+                    endFrequency
+                ),
+                now +
+                duration
+            );
+
+    }
+
+
+    gain.gain
+        .setValueAtTime(
+            0.0001,
+            now
+        );
+
+
+    gain.gain
+        .exponentialRampToValueAtTime(
+            Math.max(
+                0.0001,
+                volume
+            ),
+            now +
+            0.015
+        );
+
+
+    gain.gain
+        .exponentialRampToValueAtTime(
+            0.0001,
+            now +
+            duration
+        );
+
+
+    oscillator.connect(
+        gain
+    );
+
+
+    gain.connect(
+        audioContext.destination
+    );
+
+
+    oscillator.start(
+        now
+    );
+
+
+    oscillator.stop(
+        now +
+        duration +
+        0.03
+    );
+
+}
+
+
+// =====================================================
+// SFX
+// =====================================================
+
+const SFX = {
+
+    button() {
+
+        playTone(
+            380,
+            0.06,
+            "square",
+            0.025,
+            520
+        );
+
+    },
+
+
+    jump() {
+
+        playTone(
+            330,
+            0.11,
+            "square",
+            0.03,
+            650
+        );
+
+    },
+
+
+    token() {
+
+        playTone(
+            720,
+            0.08,
+            "sine",
+            0.04,
+            950
+        );
+
+
+        playTone(
+            980,
+            0.09,
+            "sine",
+            0.035,
+            1250,
+            0.07
+        );
+
+    },
+
+
+    stomp() {
+
+        playTone(
+            190,
+            0.11,
+            "square",
+            0.05,
+            95
+        );
+
+    },
+
+
+    hit() {
+
+        playTone(
+            210,
+            0.2,
+            "sawtooth",
+            0.045,
+            75
+        );
+
+    },
+
+
+    checkpoint() {
+
+        playTone(
+            440,
+            0.12,
+            "sine",
+            0.04,
+            550
+        );
+
+
+        playTone(
+            660,
+            0.15,
+            "sine",
+            0.045,
+            880,
+            0.16
+        );
+
+    },
+
+
+    bossHit() {
+
+        playTone(
+            150,
+            0.12,
+            "square",
+            0.06,
+            80
+        );
+
+
+        playTone(
+            520,
+            0.1,
+            "triangle",
+            0.03,
+            750,
+            0.05
+        );
+
+    },
+
+
+    finish() {
+
+        playTone(
+            440,
+            0.13,
+            "triangle",
+            0.04,
+            550
+        );
+
+
+        playTone(
+            550,
+            0.13,
+            "triangle",
+            0.04,
+            660,
+            0.12
+        );
+
+
+        playTone(
+            660,
+            0.13,
+            "triangle",
+            0.04,
+            880,
+            0.24
+        );
+
+
+        playTone(
+            880,
+            0.3,
+            "triangle",
+            0.05,
+            1100,
+            0.36
+        );
+
+    }
+
+};
+
+
+// =====================================================
+// SUPABASE CONNECTION
+// =====================================================
+
+async function testOnlineConnection() {
+
+    if (
+        !supabase
+    ) {
+
+        onlineStatus =
+            "OFFLINE";
+
+        return false;
+
+    }
+
+
+    try {
+
+        const {
+            error
+        } =
+            await supabase
+                .from(
+                    "leaderboard"
+                )
+                .select(
+                    "id"
+                )
+                .limit(
+                    1
+                );
+
+
+        if (
+            error
+        ) {
+
+            throw error;
+
+        }
+
+
+        onlineStatus =
+            "ONLINE";
+
+
+        return true;
+
+    }
+
+    catch (
+        error
+    ) {
+
+        console.error(
+            "Supabase connection error:",
+            error
+        );
+
+
+        onlineStatus =
+            "OFFLINE";
+
+
+        return false;
+
+    }
+
+}
+
+
+// =====================================================
+// ONLINE SCORE
+// =====================================================
+
+async function submitOnlineScore(
+    playerName,
+    score,
+    levelId
+) {
+
+    if (
+        !supabase
+    ) {
+
+        return false;
+
+    }
+
+
+    try {
+
+        const cleanName =
+            String(
+                playerName ||
+                "PLAYER"
+            )
+                .trim()
+                .slice(
+                    0,
+                    12
+                )
+                .toUpperCase();
+
+
+        const cleanScore =
+            Math.max(
+                0,
+                Math.floor(
+                    Number(
+                        score
+                    ) || 0
+                )
+            );
+
+
+        const {
+            error
+        } =
+            await supabase
+                .from(
+                    "leaderboard"
+                )
+                .insert({
+
+                    player_name:
+                        cleanName,
+
+                    score:
+                        cleanScore,
+
+                    level_id:
+                        levelId
+
+                });
+
+
+        if (
+            error
+        ) {
+
+            throw error;
+
+        }
+
+
+        onlineStatus =
+            "ONLINE";
+
+
+        return true;
+
+    }
+
+    catch (
+        error
+    ) {
+
+        console.error(
+            "Score upload error:",
+            error
+        );
+
+
+        onlineStatus =
+            "OFFLINE";
+
+
+        return false;
+
+    }
+
+}
+
+
+// =====================================================
+// ONLINE BEST
+// =====================================================
+
+async function getOnlineBestScore(
+    playerName
+) {
+
+    if (
+        !supabase
+    ) {
+
+        return null;
+
+    }
+
+
+    try {
+
+        const cleanName =
+            String(
+                playerName ||
+                "PLAYER"
+            )
+                .trim()
+                .slice(
+                    0,
+                    12
+                )
+                .toUpperCase();
+
+
+        const {
+            data,
+            error
+        } =
+            await supabase
+                .from(
+                    "leaderboard"
+                )
+                .select(
+                    "score"
+                )
+                .eq(
+                    "player_name",
+                    cleanName
+                )
+                .order(
+                    "score",
+                    {
+                        ascending:
+                            false
+                    }
+                )
+                .limit(
+                    1
+                );
+
+
+        if (
+            error
+        ) {
+
+            throw error;
+
+        }
+
+
+        onlineStatus =
+            "ONLINE";
+
+
+        return data?.length
+            ? Number(
+                data[0].score ||
+                0
+            )
+            : 0;
+
+    }
+
+    catch (
+        error
+    ) {
+
+        console.error(
+            "Best score error:",
+            error
+        );
+
+
+        onlineStatus =
+            "OFFLINE";
+
+
+        return null;
+
+    }
+
+}
+
+
+// =====================================================
+// ONLINE LEADERBOARD
+// =====================================================
+
+async function getOnlineLeaderboard() {
+
+    if (
+        !supabase
+    ) {
+
+        return null;
+
+    }
+
+
+    try {
+
+        const {
+            data,
+            error
+        } =
+            await supabase
+                .from(
+                    "leaderboard"
+                )
+                .select(
+                    "player_name, score, level_id, created_at"
+                )
+                .order(
+                    "score",
+                    {
+                        ascending:
+                            false
+                    }
+                )
+                .limit(
+                    100
+                );
+
+
+        if (
+            error
+        ) {
+
+            throw error;
+
+        }
+
+
+        onlineStatus =
+            "ONLINE";
+
+
+        const unique =
+            new Map();
+
+
+        for (
+            const row of
+            data || []
+        ) {
+
+            const name =
+                String(
+                    row.player_name ||
+                    "PLAYER"
+                )
+                    .trim()
+                    .toUpperCase();
+
+
+            const score =
+                Number(
+                    row.score ||
+                    0
+                );
+
+
+            const current =
+                unique.get(
+                    name
+                );
+
+
+            if (
+                !current ||
+                score >
+                current.score
+            ) {
+
+                unique.set(
+                    name,
+                    {
+                        name,
+                        score,
+                        levelId:
+                            row.level_id
+                    }
+                );
+
+            }
+
+        }
+
+
+        return Array
+            .from(
+                unique.values()
+            )
+            .sort(
+                (
+                    a,
+                    b
+                ) =>
+                    b.score -
+                    a.score
+            )
+            .slice(
+                0,
+                10
+            );
+
+    }
+
+    catch (
+        error
+    ) {
+
+        console.error(
+            "Leaderboard error:",
+            error
+        );
+
+
+        onlineStatus =
+            "OFFLINE";
+
+
+        return null;
+
+    }
+
+}
+
+
+// =====================================================
+// BUTTON
 // =====================================================
 
 function createButton(
@@ -839,8 +1397,11 @@ function createButton(
     callback,
     options = {}
 ) {
+
     const depth =
-        options.depth ?? 10;
+        options.depth ??
+        10;
+
 
     const box =
         scene.add.rectangle(
@@ -849,17 +1410,21 @@ function createButton(
             width,
             height,
             options.color ??
-                0x4b9b44
+            0x4b9b44
         )
         .setStrokeStyle(
             4,
             options.stroke ??
-                0x276029
+            0x276029
         )
-        .setDepth(depth)
+        .setDepth(
+            depth
+        )
         .setInteractive({
-            useHandCursor: true
+            useHandCursor:
+                true
         });
+
 
     const text =
         scene.add.text(
@@ -867,6 +1432,7 @@ function createButton(
             y,
             label,
             {
+
                 fontFamily:
                     "Arial",
 
@@ -879,95 +1445,157 @@ function createButton(
 
                 color:
                     "#ffffff"
+
             }
         )
-        .setOrigin(0.5)
-        .setDepth(depth + 1)
+        .setOrigin(
+            0.5
+        )
+        .setDepth(
+            depth +
+            1
+        )
         .setInteractive({
-            useHandCursor: true
+            useHandCursor:
+                true
         });
 
-    if (options.fixed) {
-        box.setScrollFactor(0);
-        text.setScrollFactor(0);
+
+    if (
+        options.fixed
+    ) {
+
+        box.setScrollFactor(
+            0
+        );
+
+
+        text.setScrollFactor(
+            0
+        );
+
     }
 
-    const run = () => {
-        SFX.button();
-        callback();
-    };
+
+    const run =
+        () => {
+
+            SFX.button();
+
+            callback();
+
+        };
+
 
     box.on(
         "pointerdown",
         run
     );
+
 
     text.on(
         "pointerdown",
         run
     );
 
+
     box.on(
         "pointerover",
-        () =>
-            box.setScale(1.04)
+        () => {
+
+            box.setScale(
+                1.04
+            );
+
+        }
     );
+
 
     box.on(
         "pointerout",
-        () =>
-            box.setScale(1)
+        () => {
+
+            box.setScale(
+                1
+            );
+
+        }
     );
 
-    return [box, text];
+
+    return [
+        box,
+        text
+    ];
+
 }
 
+
 // =====================================================
-// BOOT SCENE
+// BOOT
 // =====================================================
 
 class BootScene extends Phaser.Scene {
+
     constructor() {
-        super("BootScene");
+
+        super(
+            "BootScene"
+        );
+
     }
 
+
     preload() {
+
         this.load.image(
             "jago-idle",
             "/assets/character/jago-idle.png"
         );
+
 
         for (
             let i = 1;
             i <= 6;
             i++
         ) {
+
             this.load.image(
                 `jago-run-${i}`,
                 `/assets/character/jago-run-${i}.png`
             );
+
         }
+
 
         this.load.image(
             "boar-idle",
             "/assets/enemies/boar-idle.png"
         );
 
+
         for (
             let i = 1;
             i <= 4;
             i++
         ) {
+
             this.load.image(
                 `boar-walk-${i}`,
                 `/assets/enemies/boar-walk-${i}.png`
             );
+
         }
+
     }
 
+
     create() {
+
         this.anims.create({
-            key: "jago-run",
+
+            key:
+                "jago-run",
 
             frames: [
                 1,
@@ -976,64 +1604,99 @@ class BootScene extends Phaser.Scene {
                 4,
                 5,
                 6
-            ].map(i => ({
-                key:
-                    `jago-run-${i}`
-            })),
+            ].map(
+                i => ({
+                    key:
+                        `jago-run-${i}`
+                })
+            ),
 
-            frameRate: 10,
+            frameRate:
+                10,
 
-            repeat: -1
+            repeat:
+                -1
+
         });
 
+
         this.anims.create({
-            key: "boar-walk",
+
+            key:
+                "boar-walk",
 
             frames: [
                 1,
                 2,
                 3,
                 4
-            ].map(i => ({
-                key:
-                    `boar-walk-${i}`
-            })),
+            ].map(
+                i => ({
+                    key:
+                        `boar-walk-${i}`
+                })
+            ),
 
-            frameRate: 7,
+            frameRate:
+                7,
 
-            repeat: -1
+            repeat:
+                -1
+
         });
 
+
         this.scene.start(
+
             getPlayerName()
+
                 ? "MenuScene"
+
                 : "NameScene"
+
         );
+
     }
+
 }
 
+
 // =====================================================
-// NAME SCENE
-// MOBILE TOUCH KEYBOARD FIX
+// NAME
 // =====================================================
 
 class NameScene extends Phaser.Scene {
+
     constructor() {
-        super("NameScene");
+
+        super(
+            "NameScene"
+        );
+
     }
 
-    init(data) {
+
+    init(
+        data
+    ) {
+
         this.editing =
             Boolean(
                 data?.editing
             );
+
     }
 
+
     create() {
+
         this.typedName =
             this.editing
+
                 ? getPlayerName()
+
                 : "";
+
 
         this.add.rectangle(
             500,
@@ -1043,12 +1706,14 @@ class NameScene extends Phaser.Scene {
             0x75c8ec
         );
 
+
         this.add.circle(
             820,
             105,
             55,
             0xffd54f
         );
+
 
         this.add.rectangle(
             500,
@@ -1058,6 +1723,7 @@ class NameScene extends Phaser.Scene {
             0x3d873d
         );
 
+
         this.add.rectangle(
             500,
             532,
@@ -1066,28 +1732,39 @@ class NameScene extends Phaser.Scene {
             0x55a84f
         );
 
+
         this.add.sprite(
             175,
             525,
             "jago-idle"
         )
-        .setOrigin(0.5, 1)
+        .setOrigin(
+            0.5,
+            1
+        )
         .setDisplaySize(
             230,
             230
         );
+
 
         this.add.sprite(
             825,
             525,
             "boar-idle"
         )
-        .setOrigin(0.5, 1)
+        .setOrigin(
+            0.5,
+            1
+        )
         .setDisplaySize(
             155,
             155
         )
-        .setFlipX(true);
+        .setFlipX(
+            true
+        );
+
 
         this.add.rectangle(
             500,
@@ -1102,13 +1779,19 @@ class NameScene extends Phaser.Scene {
             0x26384a
         );
 
+
         this.add.text(
             500,
             130,
+
             this.editing
+
                 ? "UBAH NAMA PEMAIN"
+
                 : "WELCOME",
+
             {
+
                 fontFamily:
                     "Arial",
 
@@ -1120,15 +1803,20 @@ class NameScene extends Phaser.Scene {
 
                 color:
                     "#FFD166"
+
             }
         )
-        .setOrigin(0.5);
+        .setOrigin(
+            0.5
+        );
+
 
         this.add.text(
             500,
             180,
             "JAGO57 ADVENTURE",
             {
+
                 fontFamily:
                     "Arial",
 
@@ -1140,17 +1828,26 @@ class NameScene extends Phaser.Scene {
 
                 color:
                     "#ffffff"
+
             }
         )
-        .setOrigin(0.5);
+        .setOrigin(
+            0.5
+        );
+
 
         this.add.text(
             500,
             220,
+
             IS_TOUCH_DEVICE
+
                 ? "Tap kotak nama untuk mengetik"
+
                 : "Ketik nama pemain (maks. 12 karakter)",
+
             {
+
                 fontFamily:
                     "Arial",
 
@@ -1159,9 +1856,13 @@ class NameScene extends Phaser.Scene {
 
                 color:
                     "#ffffff"
+
             }
         )
-        .setOrigin(0.5);
+        .setOrigin(
+            0.5
+        );
+
 
         this.nameBox =
             this.add.rectangle(
@@ -1177,20 +1878,28 @@ class NameScene extends Phaser.Scene {
                 0xffd166
             )
             .setInteractive({
-                useHandCursor: true
+                useHandCursor:
+                    true
             });
+
 
         this.nameText =
             this.add.text(
                 500,
                 295,
+
                 this.typedName ||
-                    (
-                        IS_TOUCH_DEVICE
-                            ? "TAP UNTUK KETIK"
-                            : "_"
-                    ),
+
+                (
+                    IS_TOUCH_DEVICE
+
+                        ? "TAP UNTUK KETIK"
+
+                        : "_"
+                ),
+
                 {
+
                     fontFamily:
                         "Arial",
 
@@ -1202,24 +1911,37 @@ class NameScene extends Phaser.Scene {
 
                     color:
                         "#ffffff"
+
                 }
             )
-            .setOrigin(0.5)
+            .setOrigin(
+                0.5
+            )
             .setInteractive({
-                useHandCursor: true
+                useHandCursor:
+                    true
             });
+
 
         this.nameBox.on(
             "pointerdown",
-            () =>
-                this.openNameInput()
+            () => {
+
+                this.openNameInput();
+
+            }
         );
+
 
         this.nameText.on(
             "pointerdown",
-            () =>
-                this.openNameInput()
+            () => {
+
+                this.openNameInput();
+
+            }
         );
+
 
         this.errorText =
             this.add.text(
@@ -1227,6 +1949,7 @@ class NameScene extends Phaser.Scene {
                 345,
                 "",
                 {
+
                     fontFamily:
                         "Arial",
 
@@ -1235,9 +1958,13 @@ class NameScene extends Phaser.Scene {
 
                     color:
                         "#ffaaaa"
+
                 }
             )
-            .setOrigin(0.5);
+            .setOrigin(
+                0.5
+            );
+
 
         createButton(
             this,
@@ -1247,19 +1974,29 @@ class NameScene extends Phaser.Scene {
             58,
             "START ADVENTURE",
             () => {
+
                 if (
                     IS_TOUCH_DEVICE &&
                     !this.typedName.trim()
                 ) {
+
                     this.openNameInput();
+
                     return;
+
                 }
 
+
                 this.submitName();
+
             }
         );
 
-        if (this.editing) {
+
+        if (
+            this.editing
+        ) {
+
             createButton(
                 this,
                 500,
@@ -1267,11 +2004,15 @@ class NameScene extends Phaser.Scene {
                 210,
                 44,
                 "BATAL",
-                () =>
+                () => {
+
                     this.scene.start(
                         "MenuScene"
-                    ),
+                    );
+
+                },
                 {
+
                     color:
                         0x986128,
 
@@ -1280,77 +2021,108 @@ class NameScene extends Phaser.Scene {
 
                     fontSize:
                         "16px"
+
                 }
             );
+
         }
+
 
         this.input.keyboard.on(
             "keydown",
             event => {
+
                 unlockAudio();
+
 
                 if (
                     event.key ===
                     "Enter"
                 ) {
+
                     this.submitName();
+
                     return;
+
                 }
+
 
                 if (
                     event.key ===
                     "Backspace"
                 ) {
+
                     this.typedName =
                         this.typedName.slice(
                             0,
                             -1
                         );
 
+
                     this.refreshName();
 
                     return;
+
                 }
 
+
                 if (
-                    this.typedName
-                        .length >= 12
+                    this.typedName.length >=
+                    12
                 ) {
+
                     return;
+
                 }
+
 
                 if (
                     /^[a-zA-Z0-9 _.-]$/.test(
                         event.key
                     )
                 ) {
+
                     this.typedName +=
-                        event.key
-                            .toUpperCase();
+                        event.key.toUpperCase();
+
 
                     this.refreshName();
+
                 }
+
             }
         );
+
     }
 
+
     openNameInput() {
+
         unlockAudio();
+
 
         const result =
             window.prompt(
                 "Masukkan nama pemain (maks. 12 karakter):",
-                this.typedName || ""
+                this.typedName ||
+                ""
             );
 
+
         if (
-            result === null
+            result ===
+            null
         ) {
+
             return;
+
         }
 
+
         this.typedName =
-            String(result)
+            String(
+                result
+            )
                 .trim()
                 .replace(
                     /\s+/g,
@@ -1362,60 +2134,94 @@ class NameScene extends Phaser.Scene {
                 )
                 .toUpperCase();
 
+
         this.refreshName();
+
     }
+
 
     refreshName() {
+
         this.nameText.setText(
+
             this.typedName ||
-                (
-                    IS_TOUCH_DEVICE
-                        ? "TAP UNTUK KETIK"
-                        : "_"
-                )
+
+            (
+                IS_TOUCH_DEVICE
+
+                    ? "TAP UNTUK KETIK"
+
+                    : "_"
+            )
+
         );
 
-        this.errorText.setText("");
+
+        this.errorText.setText(
+            ""
+        );
+
     }
 
+
     submitName() {
+
         const clean =
             savePlayerName(
                 this.typedName
             );
 
-        if (!clean) {
+
+        if (
+            !clean
+        ) {
+
             this.errorText.setText(
                 "Nama pemain tidak boleh kosong."
             );
 
+
             return;
+
         }
+
 
         this.scene.start(
             "MenuScene"
         );
+
     }
+
 }
 
+
 // =====================================================
-// MENU SCENE
+// MENU
 // =====================================================
 
 class MenuScene extends Phaser.Scene {
+
     constructor() {
-        super("MenuScene");
+
+        super(
+            "MenuScene"
+        );
+
     }
 
+
     create() {
+
         this.playerName =
             getPlayerName() ||
             "PLAYER";
+
 
         this.localBest =
             getLocalBestScore(
                 this.playerName
             );
+
 
         this.add.rectangle(
             500,
@@ -1425,12 +2231,14 @@ class MenuScene extends Phaser.Scene {
             0x75c8ec
         );
 
+
         this.add.circle(
             820,
             105,
             55,
             0xffd54f
         );
+
 
         this.add.triangle(
             150,
@@ -1444,6 +2252,7 @@ class MenuScene extends Phaser.Scene {
             0x6c9f76
         );
 
+
         this.add.triangle(
             500,
             525,
@@ -1455,6 +2264,7 @@ class MenuScene extends Phaser.Scene {
             290,
             0x5f9270
         );
+
 
         this.add.triangle(
             800,
@@ -1468,6 +2278,7 @@ class MenuScene extends Phaser.Scene {
             0x6c9f76
         );
 
+
         this.add.rectangle(
             500,
             565,
@@ -1475,6 +2286,7 @@ class MenuScene extends Phaser.Scene {
             70,
             0x3d873d
         );
+
 
         this.add.rectangle(
             500,
@@ -1484,28 +2296,39 @@ class MenuScene extends Phaser.Scene {
             0x55a84f
         );
 
+
         this.add.sprite(
             165,
             525,
             "jago-idle"
         )
-        .setOrigin(0.5, 1)
+        .setOrigin(
+            0.5,
+            1
+        )
         .setDisplaySize(
             220,
             220
         );
+
 
         this.add.sprite(
             840,
             525,
             "boar-idle"
         )
-        .setOrigin(0.5, 1)
+        .setOrigin(
+            0.5,
+            1
+        )
         .setDisplaySize(
             150,
             150
         )
-        .setFlipX(true);
+        .setFlipX(
+            true
+        );
+
 
         this.add.rectangle(
             500,
@@ -1516,11 +2339,13 @@ class MenuScene extends Phaser.Scene {
             0.28
         );
 
+
         this.add.text(
             500,
             55,
             "JAGO57",
             {
+
                 fontFamily:
                     "Arial",
 
@@ -1538,15 +2363,20 @@ class MenuScene extends Phaser.Scene {
 
                 strokeThickness:
                     8
+
             }
         )
-        .setOrigin(0.5);
+        .setOrigin(
+            0.5
+        );
+
 
         this.add.text(
             500,
             120,
             "ADVENTURE",
             {
+
                 fontFamily:
                     "Arial",
 
@@ -1564,16 +2394,23 @@ class MenuScene extends Phaser.Scene {
 
                 strokeThickness:
                     5
+
             }
         )
-        .setOrigin(0.5);
+        .setOrigin(
+            0.5
+        );
+
 
         this.bestText =
             this.add.text(
                 500,
                 158,
+
                 `PLAYER: ${this.playerName} • BEST LOCAL: ${this.localBest}`,
+
                 {
+
                     fontFamily:
                         "Arial",
 
@@ -1585,9 +2422,13 @@ class MenuScene extends Phaser.Scene {
 
                     color:
                         "#ffffff"
+
                 }
             )
-            .setOrigin(0.5);
+            .setOrigin(
+                0.5
+            );
+
 
         this.connectionText =
             this.add.text(
@@ -1595,6 +2436,7 @@ class MenuScene extends Phaser.Scene {
                 185,
                 "● CHECKING ONLINE...",
                 {
+
                     fontFamily:
                         "Arial",
 
@@ -1606,9 +2448,13 @@ class MenuScene extends Phaser.Scene {
 
                     color:
                         "#FFD166"
+
                 }
             )
-            .setOrigin(0.5);
+            .setOrigin(
+                0.5
+            );
+
 
         createButton(
             this,
@@ -1617,19 +2463,23 @@ class MenuScene extends Phaser.Scene {
             300,
             54,
             "▶ PLAY",
-            () =>
+            () => {
+
                 this.scene.start(
                     "GameScene",
                     {
                         levelId:
                             "1-1"
                     }
-                ),
+                );
+
+            },
             {
                 fontSize:
                     "23px"
             }
         );
+
 
         createButton(
             this,
@@ -1638,11 +2488,15 @@ class MenuScene extends Phaser.Scene {
             300,
             50,
             "LEVEL SELECT",
-            () =>
+            () => {
+
                 this.scene.start(
                     "LevelSelectScene"
-                ),
+                );
+
+            },
             {
+
                 color:
                     0x986128,
 
@@ -1651,8 +2505,10 @@ class MenuScene extends Phaser.Scene {
 
                 fontSize:
                     "17px"
+
             }
         );
+
 
         createButton(
             this,
@@ -1661,11 +2517,15 @@ class MenuScene extends Phaser.Scene {
             300,
             50,
             "🏆 LEADERBOARD",
-            () =>
+            () => {
+
                 this.scene.start(
                     "LeaderboardScene"
-                ),
+                );
+
+            },
             {
+
                 color:
                     0x986128,
 
@@ -1674,8 +2534,10 @@ class MenuScene extends Phaser.Scene {
 
                 fontSize:
                     "17px"
+
             }
         );
+
 
         createButton(
             this,
@@ -1684,9 +2546,13 @@ class MenuScene extends Phaser.Scene {
             300,
             50,
             "HOW TO PLAY",
-            () =>
-                this.showHelp(),
+            () => {
+
+                this.showHelp();
+
+            },
             {
+
                 color:
                     0x986128,
 
@@ -1695,8 +2561,10 @@ class MenuScene extends Phaser.Scene {
 
                 fontSize:
                     "17px"
+
             }
         );
+
 
         createButton(
             this,
@@ -1705,14 +2573,19 @@ class MenuScene extends Phaser.Scene {
             220,
             40,
             "UBAH NAMA",
-            () =>
+            () => {
+
                 this.scene.start(
                     "NameScene",
                     {
-                        editing: true
+                        editing:
+                            true
                     }
-                ),
+                );
+
+            },
             {
+
                 color:
                     0x3f4650,
 
@@ -1721,17 +2594,24 @@ class MenuScene extends Phaser.Scene {
 
                 fontSize:
                     "14px"
+
             }
         );
+
 
         this.soundButton =
             this.add.text(
                 885,
                 24,
+
                 soundEnabled
+
                     ? "🔊 SOUND ON"
+
                     : "🔇 SOUND OFF",
+
                 {
+
                     fontFamily:
                         "Arial",
 
@@ -1748,53 +2628,83 @@ class MenuScene extends Phaser.Scene {
                         "#07111f",
 
                     padding: {
-                        x: 9,
-                        y: 6
+                        x:
+                            9,
+                        y:
+                            6
                     }
+
                 }
             )
-            .setOrigin(0.5)
+            .setOrigin(
+                0.5
+            )
             .setInteractive({
-                useHandCursor: true
+                useHandCursor:
+                    true
             });
+
 
         this.soundButton.on(
             "pointerdown",
             () => {
+
                 soundEnabled =
                     !soundEnabled;
 
+
                 saveSoundEnabled();
 
-                this.soundButton
-                    .setText(
-                        soundEnabled
-                            ? "🔊 SOUND ON"
-                            : "🔇 SOUND OFF"
-                    );
 
-                if (soundEnabled) {
+                this.soundButton.setText(
+
+                    soundEnabled
+
+                        ? "🔊 SOUND ON"
+
+                        : "🔇 SOUND OFF"
+
+                );
+
+
+                if (
+                    soundEnabled
+                ) {
+
                     SFX.button();
+
                 }
+
             }
         );
 
+
         this.refreshOnlineInfo();
+
     }
 
+
     async refreshOnlineInfo() {
+
         const connected =
             await testOnlineConnection();
+
 
         if (
             !this.scene.isActive(
                 "MenuScene"
             )
         ) {
+
             return;
+
         }
 
-        if (!connected) {
+
+        if (
+            !connected
+        ) {
+
             this.connectionText
                 .setText(
                     "● LOCAL MODE"
@@ -1803,8 +2713,11 @@ class MenuScene extends Phaser.Scene {
                     "#FFD166"
                 );
 
+
             return;
+
         }
+
 
         this.connectionText
             .setText(
@@ -1814,30 +2727,45 @@ class MenuScene extends Phaser.Scene {
                 "#8cff9c"
             );
 
+
         const onlineBest =
             await getOnlineBestScore(
                 this.playerName
             );
+
 
         if (
             !this.scene.isActive(
                 "MenuScene"
             )
         ) {
+
             return;
+
         }
 
+
         this.bestText.setText(
+
             onlineBest === null
+
                 ? `PLAYER: ${this.playerName} • BEST LOCAL: ${this.localBest}`
+
                 : `PLAYER: ${this.playerName} • BEST ONLINE: ${onlineBest}`
+
         );
+
     }
 
+
     showHelp() {
-        const objects = [];
+
+        const objects =
+            [];
+
 
         objects.push(
+
             this.add.rectangle(
                 500,
                 300,
@@ -1846,15 +2774,21 @@ class MenuScene extends Phaser.Scene {
                 0x07111f,
                 0.96
             )
-            .setDepth(500)
+            .setDepth(
+                500
+            )
+
         );
 
+
         objects.push(
+
             this.add.text(
                 500,
                 90,
                 "HOW TO PLAY",
                 {
+
                     fontFamily:
                         "Arial",
 
@@ -1866,28 +2800,47 @@ class MenuScene extends Phaser.Scene {
 
                     color:
                         "#FFD166"
+
                 }
             )
-            .setOrigin(0.5)
-            .setDepth(501)
+            .setOrigin(
+                0.5
+            )
+            .setDepth(
+                501
+            )
+
         );
 
+
         objects.push(
+
             this.add.text(
                 500,
                 285,
+
                 "← → Bergerak\n\n" +
+
                 "SPACE / ↑ Melompat\n\n" +
+
                 "Kumpulkan Token 57\n\n" +
+
                 "Injak boar dari atas untuk +100 poin\n\n" +
-                "Hindari boar dan jurang\n\n" +
+
+                "WORLD 1-3: kalahkan Boss Boar 5 HP\n\n" +
+
                 "P / ESC = Pause" +
+
                 (
                     IS_TOUCH_DEVICE
+
                         ? "\n\nHP: gunakan tombol ◀ ▶ ▲"
+
                         : ""
                 ),
+
                 {
+
                     fontFamily:
                         "Arial",
 
@@ -1899,13 +2852,22 @@ class MenuScene extends Phaser.Scene {
 
                     color:
                         "#ffffff"
+
                 }
             )
-            .setOrigin(0.5)
-            .setDepth(501)
+            .setOrigin(
+                0.5
+            )
+            .setDepth(
+                501
+            )
+
         );
 
-        let buttons = [];
+
+        let buttons =
+            [];
+
 
         buttons =
             createButton(
@@ -1916,41 +2878,56 @@ class MenuScene extends Phaser.Scene {
                 52,
                 "KEMBALI",
                 () => {
+
                     [
                         ...objects,
                         ...buttons
                     ].forEach(
                         item => {
+
                             if (
-                                item &&
-                                item.active
+                                item?.active
                             ) {
+
                                 item.destroy();
+
                             }
+
                         }
                     );
+
                 },
                 {
-                    depth: 502
+                    depth:
+                        502
                 }
             );
+
     }
+
 }
+
 
 // =====================================================
 // LEVEL SELECT
 // =====================================================
 
 class LevelSelectScene extends Phaser.Scene {
+
     constructor() {
+
         super(
             "LevelSelectScene"
         );
+
     }
 
+
     create() {
+
         const progress =
             loadProgress();
+
 
         this.add.rectangle(
             500,
@@ -1960,11 +2937,13 @@ class LevelSelectScene extends Phaser.Scene {
             0x07111f
         );
 
+
         this.add.text(
             500,
-            70,
+            65,
             "LEVEL SELECT",
             {
+
                 fontFamily:
                     "Arial",
 
@@ -1976,38 +2955,75 @@ class LevelSelectScene extends Phaser.Scene {
 
                 color:
                     "#FFD166"
+
             }
         )
-        .setOrigin(0.5);
+        .setOrigin(
+            0.5
+        );
+
+
+        this.add.text(
+            500,
+            108,
+            "Pilih dunia yang ingin dimainkan",
+            {
+
+                fontFamily:
+                    "Arial",
+
+                fontSize:
+                    "16px",
+
+                color:
+                    "#ffffff"
+
+            }
+        )
+        .setOrigin(
+            0.5
+        );
+
 
         this.levelCard(
+            200,
             300,
-            285,
             "WORLD 1-1",
             "GREEN VALLEY",
             true,
-            () =>
+            () => {
+
                 this.scene.start(
                     "GameScene",
                     {
                         levelId:
                             "1-1"
                     }
-                )
+                );
+
+            }
         );
 
+
         this.levelCard(
-            700,
-            285,
+            500,
+            300,
             "WORLD 1-2",
+
             progress.world12
+
                 ? "WILD RIDGE"
+
                 : "LOCKED",
+
             progress.world12,
+
             () => {
+
                 if (
                     progress.world12
                 ) {
+
                     this.scene.start(
                         "GameScene",
                         {
@@ -2015,32 +3031,89 @@ class LevelSelectScene extends Phaser.Scene {
                                 "1-2"
                         }
                     );
-                } else {
-                    this.locked();
+
                 }
+
+                else {
+
+                    this.locked(
+                        "Selesaikan WORLD 1-1 terlebih dahulu"
+                    );
+
+                }
+
             }
         );
+
+
+        this.levelCard(
+            800,
+            300,
+            "WORLD 1-3",
+
+            progress.world13
+
+                ? "BOAR FORTRESS"
+
+                : "LOCKED",
+
+            progress.world13,
+
+            () => {
+
+                if (
+                    progress.world13
+                ) {
+
+                    this.scene.start(
+                        "GameScene",
+                        {
+                            levelId:
+                                "1-3"
+                        }
+                    );
+
+                }
+
+                else {
+
+                    this.locked(
+                        "Selesaikan WORLD 1-2 terlebih dahulu"
+                    );
+
+                }
+
+            }
+        );
+
 
         createButton(
             this,
             500,
-            500,
+            510,
             220,
-            55,
+            52,
             "← MENU",
-            () =>
+            () => {
+
                 this.scene.start(
                     "MenuScene"
-                ),
+                );
+
+            },
             {
+
                 color:
                     0x986128,
 
                 stroke:
                     0x623d18
+
             }
         );
+
     }
+
 
     levelCard(
         x,
@@ -2050,96 +3123,159 @@ class LevelSelectScene extends Phaser.Scene {
         unlocked,
         callback
     ) {
+
         const panel =
             this.add.rectangle(
                 x,
                 y,
-                310,
+                250,
                 220,
+
                 unlocked
+
                     ? 0x4b9b44
+
                     : 0x3f4650
             )
             .setStrokeStyle(
                 5,
+
                 unlocked
+
                     ? 0x276029
+
                     : 0x262b31
             )
             .setInteractive({
-                useHandCursor: true
+                useHandCursor:
+                    true
             });
+
 
         this.add.text(
             x,
-            y - 50,
-            unlocked ? "✓" : "🔒",
+            y - 55,
+
+            unlocked
+
+                ? "✓"
+
+                : "🔒",
+
             {
+
                 fontFamily:
                     "Arial",
 
                 fontSize:
-                    "40px",
+                    "38px",
 
                 color:
                     "#ffffff"
+
             }
         )
-        .setOrigin(0.5);
+        .setOrigin(
+            0.5
+        );
+
 
         this.add.text(
             x,
-            y + 15,
+            y + 10,
             title,
             {
+
                 fontFamily:
                     "Arial",
 
                 fontSize:
-                    "26px",
+                    "22px",
 
                 fontStyle:
                     "bold",
 
                 color:
                     "#ffffff"
+
             }
         )
-        .setOrigin(0.5);
+        .setOrigin(
+            0.5
+        );
+
 
         this.add.text(
             x,
-            y + 55,
+            y + 52,
             subtitle,
             {
+
                 fontFamily:
                     "Arial",
 
                 fontSize:
-                    "15px",
+                    "13px",
 
                 color:
                     "#ffffff"
+
             }
         )
-        .setOrigin(0.5);
+        .setOrigin(
+            0.5
+        );
+
 
         panel.on(
             "pointerdown",
             () => {
+
                 SFX.button();
+
                 callback();
+
             }
         );
+
+
+        panel.on(
+            "pointerover",
+            () => {
+
+                panel.setScale(
+                    1.04
+                );
+
+            }
+        );
+
+
+        panel.on(
+            "pointerout",
+            () => {
+
+                panel.setScale(
+                    1
+                );
+
+            }
+        );
+
     }
 
-    locked() {
+
+    locked(
+        message
+    ) {
+
         const text =
             this.add.text(
                 500,
-                440,
-                "Selesaikan WORLD 1-1 terlebih dahulu",
+                450,
+                message,
                 {
+
                     fontFamily:
                         "Arial",
 
@@ -2147,31 +3283,56 @@ class LevelSelectScene extends Phaser.Scene {
                         "18px",
 
                     color:
-                        "#FFD166"
+                        "#FFD166",
+
+                    backgroundColor:
+                        "#18202b",
+
+                    padding: {
+                        x:
+                            15,
+                        y:
+                            10
+                    }
+
                 }
             )
-            .setOrigin(0.5);
+            .setOrigin(
+                0.5
+            );
+
 
         this.time.delayedCall(
             1600,
-            () =>
-                text.destroy()
+            () => {
+
+                text.destroy();
+
+            }
         );
+
     }
+
 }
+
 
 // =====================================================
 // LEADERBOARD
 // =====================================================
 
 class LeaderboardScene extends Phaser.Scene {
+
     constructor() {
+
         super(
             "LeaderboardScene"
         );
+
     }
 
+
     create() {
+
         this.add.rectangle(
             500,
             300,
@@ -2180,11 +3341,13 @@ class LeaderboardScene extends Phaser.Scene {
             0x07111f
         );
 
+
         this.add.text(
             500,
             55,
             "🏆 LEADERBOARD",
             {
+
                 fontFamily:
                     "Arial",
 
@@ -2196,9 +3359,13 @@ class LeaderboardScene extends Phaser.Scene {
 
                 color:
                     "#FFD166"
+
             }
         )
-        .setOrigin(0.5);
+        .setOrigin(
+            0.5
+        );
+
 
         this.statusText =
             this.add.text(
@@ -2206,6 +3373,7 @@ class LeaderboardScene extends Phaser.Scene {
                 100,
                 "Mengambil leaderboard online...",
                 {
+
                     fontFamily:
                         "Arial",
 
@@ -2214,11 +3382,17 @@ class LeaderboardScene extends Phaser.Scene {
 
                     color:
                         "#ffffff"
+
                 }
             )
-            .setOrigin(0.5);
+            .setOrigin(
+                0.5
+            );
 
-        this.boardObjects = [];
+
+        this.boardObjects =
+            [];
+
 
         createButton(
             this,
@@ -2227,13 +3401,17 @@ class LeaderboardScene extends Phaser.Scene {
             210,
             48,
             "↻ REFRESH",
-            () =>
-                this.loadBoard(),
+            () => {
+
+                this.loadBoard();
+
+            },
             {
                 fontSize:
                     "16px"
             }
         );
+
 
         createButton(
             this,
@@ -2242,11 +3420,15 @@ class LeaderboardScene extends Phaser.Scene {
             210,
             48,
             "← MENU",
-            () =>
+            () => {
+
                 this.scene.start(
                     "MenuScene"
-                ),
+                );
+
+            },
             {
+
                 color:
                     0x986128,
 
@@ -2255,29 +3437,42 @@ class LeaderboardScene extends Phaser.Scene {
 
                 fontSize:
                     "16px"
+
             }
         );
 
+
         this.loadBoard();
+
     }
 
+
     clearBoard() {
+
         this.boardObjects
             .forEach(
                 object => {
+
                     if (
-                        object &&
-                        object.active
+                        object?.active
                     ) {
+
                         object.destroy();
+
                     }
+
                 }
             );
 
-        this.boardObjects = [];
+
+        this.boardObjects =
+            [];
+
     }
 
+
     async loadBoard() {
+
         this.statusText
             .setText(
                 "Mengambil leaderboard online..."
@@ -2286,18 +3481,29 @@ class LeaderboardScene extends Phaser.Scene {
                 "#ffffff"
             );
 
+
         this.clearBoard();
+
 
         const online =
             await getOnlineLeaderboard();
+
 
         if (
             !this.scene.isActive(
                 "LeaderboardScene"
             )
-        ) return;
+        ) {
 
-        if (online) {
+            return;
+
+        }
+
+
+        if (
+            online
+        ) {
+
             this.statusText
                 .setText(
                     "● GLOBAL ONLINE • TOP 10"
@@ -2306,8 +3512,15 @@ class LeaderboardScene extends Phaser.Scene {
                     "#8cff9c"
                 );
 
-            this.renderBoard(online);
-        } else {
+
+            this.renderBoard(
+                online
+            );
+
+        }
+
+        else {
+
             this.statusText
                 .setText(
                     "● OFFLINE • LOCAL LEADERBOARD"
@@ -2316,14 +3529,22 @@ class LeaderboardScene extends Phaser.Scene {
                     "#FFD166"
                 );
 
+
             this.renderBoard(
                 loadLocalLeaderboard()
             );
+
         }
+
     }
 
-    renderBoard(board) {
+
+    renderBoard(
+        board
+    ) {
+
         this.clearBoard();
+
 
         const panel =
             this.add.rectangle(
@@ -2339,15 +3560,97 @@ class LeaderboardScene extends Phaser.Scene {
                 0x2f475e
             );
 
-        this.boardObjects.push(panel);
 
-        if (!board.length) {
+        this.boardObjects.push(
+            panel
+        );
+
+
+        const headers = [
+
+            this.add.text(
+                250,
+                155,
+                "RANK",
+                {
+                    fontFamily:
+                        "Arial",
+                    fontSize:
+                        "14px",
+                    fontStyle:
+                        "bold",
+                    color:
+                        "#9fb4c9"
+                }
+            ),
+
+            this.add.text(
+                325,
+                155,
+                "PLAYER",
+                {
+                    fontFamily:
+                        "Arial",
+                    fontSize:
+                        "14px",
+                    fontStyle:
+                        "bold",
+                    color:
+                        "#9fb4c9"
+                }
+            ),
+
+            this.add.text(
+                570,
+                155,
+                "WORLD",
+                {
+                    fontFamily:
+                        "Arial",
+                    fontSize:
+                        "14px",
+                    fontStyle:
+                        "bold",
+                    color:
+                        "#9fb4c9"
+                }
+            ),
+
+            this.add.text(
+                690,
+                155,
+                "SCORE",
+                {
+                    fontFamily:
+                        "Arial",
+                    fontSize:
+                        "14px",
+                    fontStyle:
+                        "bold",
+                    color:
+                        "#9fb4c9"
+                }
+            )
+
+        ];
+
+
+        this.boardObjects.push(
+            ...headers
+        );
+
+
+        if (
+            !board.length
+        ) {
+
             const empty =
                 this.add.text(
                     500,
                     320,
                     "Belum ada skor.",
                     {
+
                         fontFamily:
                             "Arial",
 
@@ -2356,26 +3659,40 @@ class LeaderboardScene extends Phaser.Scene {
 
                         color:
                             "#ffffff"
+
                     }
                 )
-                .setOrigin(0.5);
+                .setOrigin(
+                    0.5
+                );
+
 
             this.boardObjects.push(
                 empty
             );
 
+
             return;
+
         }
+
 
         const currentName =
             getPlayerName()
                 .toUpperCase();
 
+
         board.forEach(
-            (entry, index) => {
+            (
+                entry,
+                index
+            ) => {
+
                 const y =
-                    170 +
-                    index * 32;
+                    195 +
+                    index *
+                    31;
+
 
                 const mine =
                     String(
@@ -2385,10 +3702,14 @@ class LeaderboardScene extends Phaser.Scene {
                         .toUpperCase() ===
                     currentName;
 
+
                 const color =
                     mine
+
                         ? "#FFD166"
+
                         : "#ffffff";
+
 
                 const rank =
                     this.add.text(
@@ -2396,6 +3717,7 @@ class LeaderboardScene extends Phaser.Scene {
                         y,
                         `${index + 1}.`,
                         {
+
                             fontFamily:
                                 "Arial",
 
@@ -2406,16 +3728,25 @@ class LeaderboardScene extends Phaser.Scene {
                                 "bold",
 
                             color
+
                         }
+                    )
+                    .setOrigin(
+                        1,
+                        0.5
                     );
+
 
                 const name =
                     this.add.text(
                         325,
                         y,
+
                         entry.name ||
-                            "PLAYER",
+                        "PLAYER",
+
                         {
+
                             fontFamily:
                                 "Arial",
 
@@ -2428,17 +3759,28 @@ class LeaderboardScene extends Phaser.Scene {
                                     : "normal",
 
                             color
+
                         }
+                    )
+                    .setOrigin(
+                        0,
+                        0.5
                     );
+
 
                 const level =
                     this.add.text(
                         590,
                         y,
+
                         entry.levelId
+
                             ? `W ${entry.levelId}`
+
                             : "-",
+
                         {
+
                             fontFamily:
                                 "Arial",
 
@@ -2447,18 +3789,26 @@ class LeaderboardScene extends Phaser.Scene {
 
                             color:
                                 "#9fb4c9"
+
                         }
+                    )
+                    .setOrigin(
+                        0.5
                     );
+
 
                 const score =
                     this.add.text(
                         720,
                         y,
+
                         String(
                             entry.score ||
                             0
                         ),
+
                         {
+
                             fontFamily:
                                 "Arial",
 
@@ -2469,12 +3819,14 @@ class LeaderboardScene extends Phaser.Scene {
                                 "bold",
 
                             color
+
                         }
                     )
                     .setOrigin(
                         1,
-                        0
+                        0.5
                     );
+
 
                 this.boardObjects.push(
                     rank,
@@ -2482,120 +3834,206 @@ class LeaderboardScene extends Phaser.Scene {
                     level,
                     score
                 );
+
             }
         );
+
     }
+
 }
 
+
 // =====================================================
-// GAME SCENE
+// GAME
 // =====================================================
 
 class GameScene extends Phaser.Scene {
+
     constructor() {
-        super("GameScene");
+
+        super(
+            "GameScene"
+        );
+
     }
 
-    init(data) {
+
+    init(
+        data
+    ) {
+
         this.levelId =
-            LEVELS[data?.levelId]
+            LEVELS[
+                data?.levelId
+            ]
+
                 ? data.levelId
+
                 : "1-1";
 
+
         this.level =
-            LEVELS[this.levelId];
+            LEVELS[
+                this.levelId
+            ];
+
     }
 
+
     create() {
+
         this.playerName =
             getPlayerName() ||
             "PLAYER";
 
-        this.score = 0;
-        this.lives = 3;
+
+        this.score =
+            0;
+
+
+        this.lives =
+            3;
+
 
         this.checkpointX =
             this.level.startX;
 
+
         this.checkpointY =
             this.level.startY;
+
 
         this.checkpointActive =
             false;
 
+
         this.gameFinished =
             false;
+
 
         this.gameOverActive =
             false;
 
+
         this.respawning =
             false;
+
 
         this.invulnerable =
             false;
 
+
         this.facingLeft =
             false;
+
 
         this.isPaused =
             false;
 
-        this.pauseObjects = [];
-        this.enemies = [];
+
+        this.pauseObjects =
+            [];
+
+
+        this.enemies =
+            [];
+
+
+        this.boss =
+            null;
+
+
+        this.bossDefeated =
+            !this.level.boss;
+
+
+        this.lastFinishWarning =
+            -9999;
+
 
         this.mobileInput = {
-            left: false,
-            right: false,
-            jump: false
+            left:
+                false,
+            right:
+                false,
+            jump:
+                false
         };
 
-        if (IS_TOUCH_DEVICE) {
-            this.input.addPointer(2);
+
+        if (
+            IS_TOUCH_DEVICE
+        ) {
+
+            this.input.addPointer(
+                2
+            );
+
         }
+
 
         this.input.once(
             "pointerdown",
             unlockAudio
         );
 
+
         this.input.keyboard.once(
             "keydown",
             unlockAudio
         );
 
-        this.physics.world
-            .setBounds(
-                0,
-                0,
-                this.level.worldWidth,
-                WORLD_HEIGHT
-            );
 
-        this.cameras.main
-            .setBounds(
-                0,
-                0,
-                this.level.worldWidth,
-                GAME_HEIGHT
-            );
+        this.physics.world.setBounds(
+            0,
+            0,
+            this.level.worldWidth,
+            WORLD_HEIGHT
+        );
+
+
+        this.cameras.main.setBounds(
+            0,
+            0,
+            this.level.worldWidth,
+            GAME_HEIGHT
+        );
+
 
         this.add.rectangle(
-            this.level.worldWidth / 2,
+            this.level.worldWidth /
+            2,
             300,
             this.level.worldWidth,
             600,
-            this.levelId === "1-2"
+
+            this.levelId ===
+            "1-2"
+
                 ? 0x69b8df
-                : 0x87ceeb
+
+                : this.levelId ===
+                  "1-3"
+
+                    ? 0x8f96a3
+
+                    : 0x87ceeb
         );
+
 
         this.add.circle(
             800,
             105,
             52,
-            0xffd54f
+
+            this.levelId ===
+            "1-3"
+
+                ? 0xffb347
+
+                : 0xffd54f
         );
+
 
         for (
             let x = 400;
@@ -2603,8 +4041,14 @@ class GameScene extends Phaser.Scene {
             this.level.worldWidth;
             x += 750
         ) {
-            this.cloud(x, 110);
+
+            this.cloud(
+                x,
+                110
+            );
+
         }
+
 
         for (
             let x = 250;
@@ -2612,30 +4056,43 @@ class GameScene extends Phaser.Scene {
             this.level.worldWidth;
             x += 650
         ) {
+
             this.add.triangle(
                 x,
                 525,
+
                 0,
                 260,
+
                 190,
                 0,
+
                 380,
                 260,
-                0x6fa36f
+
+                this.levelId ===
+                "1-3"
+
+                    ? 0x626b73
+
+                    : 0x6fa36f
             );
+
         }
+
 
         const grounds =
             this.groundSegments();
 
+
         const platforms =
-            this.level.platforms
-                .map(
-                    platform =>
-                        this.platform(
-                            ...platform
-                        )
-                );
+            this.level.platforms.map(
+                platform =>
+                    this.platform(
+                        ...platform
+                    )
+            );
+
 
         this.playerBody =
             this.add.rectangle(
@@ -2647,14 +4104,17 @@ class GameScene extends Phaser.Scene {
                 0
             );
 
+
         this.physics.add.existing(
             this.playerBody
         );
+
 
         this.playerBody.body
             .setCollideWorldBounds(
                 true
             );
+
 
         this.playerSprite =
             this.add.sprite(
@@ -2662,33 +4122,50 @@ class GameScene extends Phaser.Scene {
                 this.level.startY,
                 "jago-idle"
             )
-            .setOrigin(0.5, 1)
+            .setOrigin(
+                0.5,
+                1
+            )
             .setDisplaySize(
                 PLAYER_VISUAL_SIZE,
                 PLAYER_VISUAL_SIZE
             )
-            .setDepth(20)
-            .setAlpha(1);
+            .setDepth(
+                20
+            )
+            .setAlpha(
+                1
+            );
+
 
         grounds.forEach(
-            ground =>
+            ground => {
+
                 this.physics.add.collider(
                     this.playerBody,
                     ground
-                )
+                );
+
+            }
         );
 
+
         platforms.forEach(
-            platform =>
+            platform => {
+
                 this.physics.add.collider(
                     this.playerBody,
                     platform
-                )
+                );
+
+            }
         );
+
 
         this.cursors =
             this.input.keyboard
                 .createCursorKeys();
+
 
         this.pauseKeyP =
             this.input.keyboard
@@ -2697,6 +4174,7 @@ class GameScene extends Phaser.Scene {
                         .KeyCodes.P
                 );
 
+
         this.pauseKeyEsc =
             this.input.keyboard
                 .addKey(
@@ -2704,31 +4182,53 @@ class GameScene extends Phaser.Scene {
                         .KeyCodes.ESC
                 );
 
-        this.level.tokens
-            .forEach(
-                token =>
-                    this.token(
-                        ...token
-                    )
+
+        this.level.tokens.forEach(
+            token => {
+
+                this.token(
+                    ...token
+                );
+
+            }
+        );
+
+
+        this.level.boars.forEach(
+            boar => {
+
+                this.boar(
+                    ...boar
+                );
+
+            }
+        );
+
+
+        if (
+            this.level.boss
+        ) {
+
+            this.createBoss(
+                this.level.boss
             );
 
-        this.level.boars
-            .forEach(
-                boar =>
-                    this.boar(
-                        ...boar
-                    )
-            );
+        }
+
 
         this.checkpoint();
+
         this.finish();
+
         this.hud();
 
         this.syncPlayerVisual();
 
+
         this.input.on(
             "pointerup",
             () => {
+
                 this.mobileInput.left =
                     false;
 
@@ -2737,53 +4237,256 @@ class GameScene extends Phaser.Scene {
 
                 this.mobileInput.jump =
                     false;
+
             }
         );
+
     }
 
-    groundSegments() {
-        const grounds = [];
-        let cursor = 0;
 
-        this.level.gaps
-            .forEach(
-                ([start, end]) => {
-                    if (
-                        start > cursor
-                    ) {
-                        grounds.push(
-                            this.ground(
-                                cursor,
-                                start
-                            )
-                        );
+    // =================================================
+    // EFFECTS
+    // =================================================
+
+    burst(
+        x,
+        y,
+        color,
+        amount = 10
+    ) {
+
+        for (
+            let i = 0;
+            i < amount;
+            i++
+        ) {
+
+            const p =
+                this.add.circle(
+                    x,
+                    y,
+                    Phaser.Math.Between(
+                        3,
+                        7
+                    ),
+                    color
+                )
+                .setDepth(
+                    80
+                );
+
+
+            const angle =
+                Phaser.Math.FloatBetween(
+                    0,
+                    Math.PI *
+                    2
+                );
+
+
+            const distance =
+                Phaser.Math.Between(
+                    25,
+                    75
+                );
+
+
+            this.tweens.add({
+
+                targets:
+                    p,
+
+                x:
+                    x +
+                    Math.cos(
+                        angle
+                    ) *
+                    distance,
+
+                y:
+                    y +
+                    Math.sin(
+                        angle
+                    ) *
+                    distance,
+
+                alpha:
+                    0,
+
+                scale:
+                    0.2,
+
+                duration:
+                    Phaser.Math.Between(
+                        300,
+                        550
+                    ),
+
+                onComplete:
+                    () => {
+
+                        p.destroy();
+
                     }
 
-                    cursor = end;
+            });
+
+        }
+
+    }
+
+
+    floating(
+        message,
+        color = "#FFD166"
+    ) {
+
+        const text =
+            this.add.text(
+                500,
+                165,
+                message,
+                {
+
+                    fontFamily:
+                        "Arial",
+
+                    fontSize:
+                        "27px",
+
+                    fontStyle:
+                        "bold",
+
+                    color,
+
+                    backgroundColor:
+                        "#07111f",
+
+                    padding: {
+                        x:
+                            18,
+                        y:
+                            10
+                    }
+
                 }
+            )
+            .setOrigin(
+                0.5
+            )
+            .setScrollFactor(
+                0
+            )
+            .setDepth(
+                400
             );
+
+
+        this.tweens.add({
+
+            targets:
+                text,
+
+            y:
+                130,
+
+            alpha:
+                0,
+
+            duration:
+                1300,
+
+            onComplete:
+                () => {
+
+                    text.destroy();
+
+                }
+
+        });
+
+    }
+
+
+    // =================================================
+    // WORLD
+    // =================================================
+
+    groundSegments() {
+
+        const grounds =
+            [];
+
+
+        let cursor =
+            0;
+
+
+        this.level.gaps.forEach(
+            (
+                [
+                    start,
+                    end
+                ]
+            ) => {
+
+                if (
+                    start >
+                    cursor
+                ) {
+
+                    grounds.push(
+                        this.ground(
+                            cursor,
+                            start
+                        )
+                    );
+
+                }
+
+
+                cursor =
+                    end;
+
+            }
+        );
+
 
         if (
             cursor <
             this.level.worldWidth
         ) {
+
             grounds.push(
                 this.ground(
                     cursor,
                     this.level.worldWidth
                 )
             );
+
         }
 
+
         return grounds;
+
     }
 
-    ground(start, end) {
+
+    ground(
+        start,
+        end
+    ) {
+
         const width =
-            end - start;
+            end -
+            start;
+
 
         const center =
-            start + width / 2;
+            start +
+            width /
+            2;
+
 
         const body =
             this.add.rectangle(
@@ -2791,78 +4494,142 @@ class GameScene extends Phaser.Scene {
                 565,
                 width,
                 70,
-                0x3d873d
+
+                this.levelId ===
+                "1-3"
+
+                    ? 0x474c52
+
+                    : 0x3d873d
             );
+
 
         this.physics.add.existing(
             body,
             true
         );
+
 
         this.add.rectangle(
             center,
             532,
             width,
             10,
-            0x55a84f
+
+            this.levelId ===
+            "1-3"
+
+                ? 0x6f777f
+
+                : 0x55a84f
         );
 
+
         return body;
+
     }
 
-    platform(x, y, width) {
+
+    platform(
+        x,
+        y,
+        width
+    ) {
+
         const body =
             this.add.rectangle(
                 x,
                 y,
                 width,
                 30,
-                0x986128
+
+                this.levelId ===
+                "1-3"
+
+                    ? 0x5e4a3d
+
+                    : 0x986128
             );
+
 
         this.physics.add.existing(
             body,
             true
         );
 
+
         this.add.rectangle(
             x,
             y - 14,
             width,
             8,
-            0x4b9b44
+
+            this.levelId ===
+            "1-3"
+
+                ? 0x7a838c
+
+                : 0x4b9b44
         );
 
+
         return body;
+
     }
 
-    cloud(x, y) {
+
+    cloud(
+        x,
+        y
+    ) {
+
+        const alpha =
+            this.levelId ===
+            "1-3"
+
+                ? 0.55
+
+                : 0.85;
+
+
         this.add.circle(
             x,
             y,
             35,
             0xffffff,
-            0.85
+            alpha
         );
+
 
         this.add.circle(
             x + 40,
             y - 10,
             45,
             0xffffff,
-            0.85
+            alpha
         );
+
 
         this.add.circle(
             x + 85,
             y,
             35,
             0xffffff,
-            0.85
+            alpha
         );
+
     }
 
-    token(x, y) {
+
+    // =================================================
+    // TOKEN
+    // =================================================
+
+    token(
+        x,
+        y
+    ) {
+
         const token =
             this.add.circle(
                 x,
@@ -2875,10 +4642,12 @@ class GameScene extends Phaser.Scene {
                 0xd89a00
             );
 
+
         this.physics.add.existing(
             token,
             true
         );
+
 
         const text =
             this.add.text(
@@ -2886,6 +4655,7 @@ class GameScene extends Phaser.Scene {
                 y,
                 "57",
                 {
+
                     fontFamily:
                         "Arial",
 
@@ -2897,29 +4667,84 @@ class GameScene extends Phaser.Scene {
 
                     color:
                         "#6b4600"
+
                 }
             )
-            .setOrigin(0.5);
+            .setOrigin(
+                0.5
+            );
+
+
+        this.tweens.add({
+
+            targets: [
+                token,
+                text
+            ],
+
+            y:
+                y - 8,
+
+            duration:
+                700,
+
+            yoyo:
+                true,
+
+            repeat:
+                -1,
+
+            ease:
+                "Sine.easeInOut"
+
+        });
+
 
         this.physics.add.overlap(
             this.playerBody,
             token,
             () => {
-                if (!token.active) {
+
+                if (
+                    !token.active
+                ) {
+
                     return;
+
                 }
+
 
                 SFX.token();
 
-                this.score += 57;
+
+                this.burst(
+                    token.x,
+                    token.y,
+                    0xffd700,
+                    10
+                );
+
+
+                this.score +=
+                    57;
+
 
                 this.updateScore();
 
+
                 token.destroy();
+
                 text.destroy();
+
             }
         );
+
     }
+
+
+    // =================================================
+    // BOAR
+    // =================================================
 
     boar(
         x,
@@ -2927,6 +4752,7 @@ class GameScene extends Phaser.Scene {
         leftLimit,
         rightLimit
     ) {
+
         const body =
             this.add.rectangle(
                 x,
@@ -2937,20 +4763,26 @@ class GameScene extends Phaser.Scene {
                 0
             );
 
+
         this.physics.add.existing(
             body
         );
 
-        body.body
-            .setAllowGravity(false);
 
-        body.body
-            .setImmovable(true);
+        body.body.setAllowGravity(
+            false
+        );
 
-        body.body
-            .setVelocityX(
-                BOAR_SPEED
-            );
+
+        body.body.setImmovable(
+            true
+        );
+
+
+        body.body.setVelocityX(
+            BOAR_SPEED
+        );
+
 
         const sprite =
             this.add.sprite(
@@ -2958,154 +4790,774 @@ class GameScene extends Phaser.Scene {
                 y,
                 "boar-idle"
             )
-            .setOrigin(0.5, 1)
+            .setOrigin(
+                0.5,
+                1
+            )
             .setDisplaySize(
                 BOAR_VISUAL_SIZE,
                 BOAR_VISUAL_SIZE
             )
-            .setDepth(15);
+            .setDepth(
+                15
+            );
+
 
         sprite.play(
             "boar-walk"
         );
 
+
         const enemy = {
+
             body,
             sprite,
             leftLimit,
             rightLimit,
-            alive: true
+
+            alive:
+                true
+
         };
 
-        this.enemies.push(enemy);
+
+        this.enemies.push(
+            enemy
+        );
+
 
         this.physics.add.overlap(
             this.playerBody,
             body,
-            () =>
+            () => {
+
                 this.handleBoar(
                     enemy
-                )
+                );
+
+            }
         );
+
     }
 
-    handleBoar(enemy) {
+
+    handleBoar(
+        enemy
+    ) {
+
         if (
             !enemy.alive ||
+
             this.respawning ||
+
             this.invulnerable ||
+
             this.gameFinished ||
+
             this.gameOverActive ||
+
             this.isPaused
         ) {
+
             return;
+
         }
+
 
         const falling =
             this.playerBody.body
-                .velocity.y > 80;
+                .velocity.y >
+            80;
+
 
         const playerBottom =
             this.playerBody.body
                 .bottom;
 
+
         const enemyTop =
-            enemy.body.body.top;
+            enemy.body.body
+                .top;
+
 
         if (
             falling &&
             playerBottom <
-            enemyTop + 32
+            enemyTop +
+            32
         ) {
-            enemy.alive = false;
+
+            enemy.alive =
+                false;
+
 
             enemy.body.body.enable =
                 false;
 
+
             enemy.sprite.stop();
+
 
             SFX.stomp();
 
-            this.score += 100;
+
+            this.score +=
+                100;
+
 
             this.updateScore();
 
+
             this.playerBody.body
-                .setVelocityY(-330);
+                .setVelocityY(
+                    -330
+                );
+
+
+            this.burst(
+                enemy.sprite.x,
+                enemy.sprite.y -
+                30,
+                0xff4545,
+                10
+            );
+
 
             this.tweens.add({
+
                 targets:
                     enemy.sprite,
 
-                alpha: 0,
+                alpha:
+                    0,
 
-                scaleY: 0.25,
+                scaleY:
+                    0.25,
 
-                duration: 280,
+                duration:
+                    280,
 
-                onComplete: () => {
-                    enemy.body.destroy();
-                    enemy.sprite.destroy();
-                }
+                onComplete:
+                    () => {
+
+                        enemy.body.destroy();
+
+                        enemy.sprite.destroy();
+
+                    }
+
             });
 
+
             return;
+
         }
 
+
         this.loseLife();
+
     }
 
+
     updateEnemies() {
+
         this.enemies.forEach(
             enemy => {
+
                 if (
                     !enemy.alive ||
                     !enemy.body.active
                 ) {
+
                     return;
+
                 }
+
 
                 if (
                     enemy.body.x <=
                     enemy.leftLimit
                 ) {
+
                     enemy.body.body
                         .setVelocityX(
                             BOAR_SPEED
                         );
 
+
                     enemy.sprite
-                        .setFlipX(false);
-                } else if (
+                        .setFlipX(
+                            false
+                        );
+
+                }
+
+                else if (
                     enemy.body.x >=
                     enemy.rightLimit
                 ) {
+
                     enemy.body.body
                         .setVelocityX(
                             -BOAR_SPEED
                         );
 
+
                     enemy.sprite
-                        .setFlipX(true);
+                        .setFlipX(
+                            true
+                        );
+
                 }
+
 
                 enemy.sprite
                     .setPosition(
                         enemy.body.x,
                         enemy.body.body
-                            .bottom + 3
+                            .bottom +
+                        3
                     )
                     .setDisplaySize(
                         BOAR_VISUAL_SIZE,
                         BOAR_VISUAL_SIZE
                     );
+
             }
         );
+
     }
 
+
+    // =================================================
+    // BOSS
+    // =================================================
+
+    createBoss(
+        config
+    ) {
+
+        const body =
+            this.add.rectangle(
+                config.x,
+                config.y,
+                120,
+                90,
+                0xff0000,
+                0
+            );
+
+
+        this.physics.add.existing(
+            body
+        );
+
+
+        body.body.setAllowGravity(
+            false
+        );
+
+
+        body.body.setImmovable(
+            true
+        );
+
+
+        body.body.setVelocityX(
+            0
+        );
+
+
+        const sprite =
+            this.add.sprite(
+                config.x,
+                config.y,
+                "boar-idle"
+            )
+            .setOrigin(
+                0.5,
+                1
+            )
+            .setDisplaySize(
+                BOSS_VISUAL_SIZE,
+                BOSS_VISUAL_SIZE
+            )
+            .setDepth(
+                18
+            )
+            .setTint(
+                0x8f5a3c
+            );
+
+
+        sprite.play(
+            "boar-walk"
+        );
+
+
+        this.boss = {
+
+            body,
+            sprite,
+
+            hp:
+                config.hp,
+
+            maxHp:
+                config.hp,
+
+            leftLimit:
+                config.left,
+
+            rightLimit:
+                config.right,
+
+            alive:
+                true,
+
+            started:
+                false,
+
+            invulnerable:
+                false,
+
+            speed:
+                120
+
+        };
+
+
+        this.physics.add.overlap(
+            this.playerBody,
+            body,
+            () => {
+
+                this.handleBossCollision();
+
+            }
+        );
+
+    }
+
+
+    handleBossCollision() {
+
+        const boss =
+            this.boss;
+
+
+        if (
+            !boss ||
+
+            !boss.alive ||
+
+            boss.invulnerable ||
+
+            this.respawning ||
+
+            this.invulnerable ||
+
+            this.gameFinished ||
+
+            this.gameOverActive ||
+
+            this.isPaused
+        ) {
+
+            return;
+
+        }
+
+
+        const falling =
+            this.playerBody.body
+                .velocity.y >
+            100;
+
+
+        const playerBottom =
+            this.playerBody.body
+                .bottom;
+
+
+        const bossTop =
+            boss.body.body
+                .top;
+
+
+        if (
+            falling &&
+            playerBottom <
+            bossTop +
+            50
+        ) {
+
+            this.damageBoss();
+
+
+            this.playerBody.body
+                .setVelocityY(
+                    -390
+                );
+
+
+            return;
+
+        }
+
+
+        this.loseLife();
+
+    }
+
+
+    damageBoss() {
+
+        const boss =
+            this.boss;
+
+
+        if (
+            !boss ||
+            !boss.alive ||
+            boss.invulnerable
+        ) {
+
+            return;
+
+        }
+
+
+        boss.hp -=
+            1;
+
+
+        boss.invulnerable =
+            true;
+
+
+        SFX.bossHit();
+
+
+        this.cameras.main.shake(
+            140,
+            0.007
+        );
+
+
+        this.score +=
+            150;
+
+
+        this.updateScore();
+
+        this.updateBossHud();
+
+
+        this.burst(
+            boss.sprite.x,
+            boss.sprite.y -
+            80,
+            0xffd166,
+            16
+        );
+
+
+        this.floating(
+            `BOSS HIT! ${boss.hp}/${boss.maxHp}`,
+            "#ffcc66"
+        );
+
+
+        if (
+            boss.hp <=
+            0
+        ) {
+
+            this.defeatBoss();
+
+            return;
+
+        }
+
+
+        boss.speed +=
+            18;
+
+
+        this.tweens.add({
+
+            targets:
+                boss.sprite,
+
+            alpha: {
+                from:
+                    0.25,
+                to:
+                    1
+            },
+
+            duration:
+                100,
+
+            yoyo:
+                true,
+
+            repeat:
+                3,
+
+            onComplete:
+                () => {
+
+                    boss.sprite.setAlpha(
+                        1
+                    );
+
+
+                    boss.invulnerable =
+                        false;
+
+                }
+
+        });
+
+    }
+
+
+    defeatBoss() {
+
+        const boss =
+            this.boss;
+
+
+        if (
+            !boss ||
+            !boss.alive
+        ) {
+
+            return;
+
+        }
+
+
+        boss.alive =
+            false;
+
+
+        boss.body.body.enable =
+            false;
+
+
+        boss.sprite.stop();
+
+
+        this.bossDefeated =
+            true;
+
+
+        this.score +=
+            500;
+
+
+        this.updateScore();
+
+        this.updateBossHud();
+
+
+        if (
+            this.finishFlag
+        ) {
+
+            this.finishFlag.setFillStyle(
+                0x55c96b
+            );
+
+        }
+
+
+        this.burst(
+            boss.sprite.x,
+            boss.sprite.y -
+            90,
+            0xffd700,
+            30
+        );
+
+
+        this.burst(
+            boss.sprite.x,
+            boss.sprite.y -
+            90,
+            0xff5544,
+            20
+        );
+
+
+        this.floating(
+            "BOSS DIKALAHKAN! FINISH TERBUKA!",
+            "#8cff9c"
+        );
+
+
+        this.cameras.main.shake(
+            280,
+            0.01
+        );
+
+
+        this.tweens.add({
+
+            targets:
+                boss.sprite,
+
+            alpha:
+                0,
+
+            scaleX:
+                0.5,
+
+            scaleY:
+                0.5,
+
+            angle:
+                15,
+
+            duration:
+                650,
+
+            onComplete:
+                () => {
+
+                    boss.sprite.destroy();
+
+                }
+
+        });
+
+    }
+
+
+    updateBoss() {
+
+        const boss =
+            this.boss;
+
+
+        if (
+            !boss ||
+            !boss.alive ||
+            !boss.body.active
+        ) {
+
+            return;
+
+        }
+
+
+        if (
+            !boss.started
+        ) {
+
+            if (
+                this.playerBody.x >=
+                5150
+            ) {
+
+                boss.started =
+                    true;
+
+
+                boss.body.body
+                    .setVelocityX(
+                        -boss.speed
+                    );
+
+
+                this.floating(
+                    "BOSS BATTLE!",
+                    "#ff9b73"
+                );
+
+            }
+
+            else {
+
+                boss.body.body
+                    .setVelocityX(
+                        0
+                    );
+
+            }
+
+        }
+
+        else if (
+            !boss.invulnerable
+        ) {
+
+            if (
+                boss.body.x <=
+                boss.leftLimit
+            ) {
+
+                boss.body.body
+                    .setVelocityX(
+                        boss.speed
+                    );
+
+
+                boss.sprite
+                    .setFlipX(
+                        false
+                    );
+
+            }
+
+            else if (
+                boss.body.x >=
+                boss.rightLimit
+            ) {
+
+                boss.body.body
+                    .setVelocityX(
+                        -boss.speed
+                    );
+
+
+                boss.sprite
+                    .setFlipX(
+                        true
+                    );
+
+            }
+
+        }
+
+
+        boss.sprite
+            .setPosition(
+                boss.body.x,
+                boss.body.body
+                    .bottom +
+                5
+            )
+            .setDisplaySize(
+                BOSS_VISUAL_SIZE,
+                BOSS_VISUAL_SIZE
+            );
+
+    }
+
+
+    // =================================================
+    // CHECKPOINT
+    // =================================================
+
     checkpoint() {
+
         const x =
             this.level.checkpointX;
+
 
         this.add.rectangle(
             x,
@@ -3115,18 +5567,52 @@ class GameScene extends Phaser.Scene {
             0xffffff
         );
 
+
         this.checkpointFlag =
             this.add.triangle(
                 x + 40,
                 405,
+
                 0,
                 0,
+
                 80,
                 30,
+
                 0,
                 60,
+
                 0xffd700
             );
+
+
+        this.add.text(
+            x - 100,
+            375,
+            "CHECKPOINT",
+            {
+
+                fontFamily:
+                    "Arial",
+
+                fontSize:
+                    "18px",
+
+                fontStyle:
+                    "bold",
+
+                color:
+                    "#ffffff",
+
+                stroke:
+                    "#07111f",
+
+                strokeThickness:
+                    3
+
+            }
+        );
+
 
         const zone =
             this.add.rectangle(
@@ -3138,50 +5624,96 @@ class GameScene extends Phaser.Scene {
                 0
             );
 
+
         this.physics.add.existing(
             zone,
             true
         );
 
+
         this.physics.add.overlap(
             this.playerBody,
             zone,
-            () =>
-                this.activateCheckpoint()
+            () => {
+
+                this.activateCheckpoint();
+
+            }
         );
+
     }
 
+
     activateCheckpoint() {
+
         if (
             this.checkpointActive
         ) {
+
             return;
+
         }
 
-        this.checkpointActive = true;
+
+        this.checkpointActive =
+            true;
+
 
         this.checkpointX =
             this.level.checkpointX +
             50;
 
-        this.checkpointY = 430;
+
+        this.checkpointY =
+            430;
+
 
         this.checkpointFlag
             .setFillStyle(
                 0x55c96b
             );
 
+
         this.checkpointStatusText
             .setText(
                 "CHECKPOINT: AKTIF"
             );
 
+
         SFX.checkpoint();
+
+
+        this.burst(
+            this.level.checkpointX,
+            420,
+            0x55ff88,
+            20
+        );
+
+
+        this.floating(
+
+            this.levelId ===
+            "1-3"
+
+                ? "CHECKPOINT BOSS AKTIF!"
+
+                : "CHECKPOINT AKTIF!"
+
+        );
+
     }
 
+
+    // =================================================
+    // FINISH
+    // =================================================
+
     finish() {
+
         const x =
             this.level.finishX;
+
 
         const zone =
             this.add.rectangle(
@@ -3193,10 +5725,12 @@ class GameScene extends Phaser.Scene {
                 0
             );
 
+
         this.physics.add.existing(
             zone,
             true
         );
+
 
         this.add.rectangle(
             x,
@@ -3206,27 +5740,105 @@ class GameScene extends Phaser.Scene {
             0xffffff
         );
 
-        this.add.triangle(
-            x + 50,
-            345,
-            0,
-            0,
-            100,
-            35,
-            0,
-            70,
-            0xffd700
+
+        this.finishFlag =
+            this.add.triangle(
+                x + 50,
+                345,
+
+                0,
+                0,
+
+                100,
+                35,
+
+                0,
+                70,
+
+                this.level.boss &&
+                !this.bossDefeated
+
+                    ? 0x666666
+
+                    : 0xffd700
+            );
+
+
+        this.add.text(
+            x - 80,
+            285,
+            "FINISH",
+            {
+
+                fontFamily:
+                    "Arial",
+
+                fontSize:
+                    "26px",
+
+                fontStyle:
+                    "bold",
+
+                color:
+                    "#ffffff",
+
+                stroke:
+                    "#07111f",
+
+                strokeThickness:
+                    4
+
+            }
         );
+
 
         this.physics.add.overlap(
             this.playerBody,
             zone,
-            () =>
-                this.finishLevel()
+            () => {
+
+                if (
+                    this.level.boss &&
+                    !this.bossDefeated
+                ) {
+
+                    if (
+                        this.time.now -
+                        this.lastFinishWarning >
+                        1500
+                    ) {
+
+                        this.lastFinishWarning =
+                            this.time.now;
+
+
+                        this.floating(
+                            "KALAHKAN BOSS DULU!",
+                            "#ff9b73"
+                        );
+
+                    }
+
+
+                    return;
+
+                }
+
+
+                this.finishLevel();
+
+            }
         );
+
     }
 
+
+    // =================================================
+    // HUD
+    // =================================================
+
     hud() {
+
         this.add.rectangle(
             210,
             70,
@@ -3235,8 +5847,13 @@ class GameScene extends Phaser.Scene {
             0x07111f,
             0.38
         )
-        .setScrollFactor(0)
-        .setDepth(95);
+        .setScrollFactor(
+            0
+        )
+        .setDepth(
+            95
+        );
+
 
         this.add.rectangle(
             835,
@@ -3246,14 +5863,20 @@ class GameScene extends Phaser.Scene {
             0x07111f,
             0.38
         )
-        .setScrollFactor(0)
-        .setDepth(95);
+        .setScrollFactor(
+            0
+        )
+        .setDepth(
+            95
+        );
+
 
         this.add.text(
             35,
             17,
             "JAGO57",
             {
+
                 fontFamily:
                     "Arial",
 
@@ -3265,16 +5888,25 @@ class GameScene extends Phaser.Scene {
 
                 color:
                     "#FFD166"
+
             }
         )
-        .setScrollFactor(0)
-        .setDepth(100);
+        .setScrollFactor(
+            0
+        )
+        .setDepth(
+            100
+        );
+
 
         this.add.text(
             35,
             58,
+
             `${this.level.name} • ${this.level.subtitle}`,
+
             {
+
                 fontFamily:
                     "Arial",
 
@@ -3286,18 +5918,29 @@ class GameScene extends Phaser.Scene {
 
                 color:
                     "#ffffff"
+
             }
         )
-        .setScrollFactor(0)
-        .setDepth(100);
+        .setScrollFactor(
+            0
+        )
+        .setDepth(
+            100
+        );
+
 
         this.add.text(
             35,
             91,
+
             IS_TOUCH_DEVICE
+
                 ? "◀ ▶ GERAK   ▲ LOMPAT"
+
                 : "← → GERAK   SPACE / ↑ LOMPAT   P / ESC = PAUSE",
+
             {
+
                 fontFamily:
                     "Arial",
 
@@ -3306,10 +5949,16 @@ class GameScene extends Phaser.Scene {
 
                 color:
                     "#ffffff"
+
             }
         )
-        .setScrollFactor(0)
-        .setDepth(100);
+        .setScrollFactor(
+            0
+        )
+        .setDepth(
+            100
+        );
+
 
         this.scoreText =
             this.add.text(
@@ -3317,6 +5966,7 @@ class GameScene extends Phaser.Scene {
                 20,
                 "57 POINTS: 0",
                 {
+
                     fontFamily:
                         "Arial",
 
@@ -3328,10 +5978,16 @@ class GameScene extends Phaser.Scene {
 
                     color:
                         "#ffffff"
+
                 }
             )
-            .setScrollFactor(0)
-            .setDepth(100);
+            .setScrollFactor(
+                0
+            )
+            .setDepth(
+                100
+            );
+
 
         this.livesText =
             this.add.text(
@@ -3339,6 +5995,7 @@ class GameScene extends Phaser.Scene {
                 52,
                 "LIVES: ♥ ♥ ♥",
                 {
+
                     fontFamily:
                         "Arial",
 
@@ -3350,10 +6007,16 @@ class GameScene extends Phaser.Scene {
 
                     color:
                         "#ffffff"
+
                 }
             )
-            .setScrollFactor(0)
-            .setDepth(100);
+            .setScrollFactor(
+                0
+            )
+            .setDepth(
+                100
+            );
+
 
         this.checkpointStatusText =
             this.add.text(
@@ -3361,6 +6024,7 @@ class GameScene extends Phaser.Scene {
                 82,
                 "CHECKPOINT: START",
                 {
+
                     fontFamily:
                         "Arial",
 
@@ -3369,18 +6033,30 @@ class GameScene extends Phaser.Scene {
 
                     color:
                         "#ffffff"
+
                 }
             )
-            .setScrollFactor(0)
-            .setDepth(100);
+            .setScrollFactor(
+                0
+            )
+            .setDepth(
+                100
+            );
+
 
         this.add.text(
             35,
             120,
-            onlineStatus === "ONLINE"
+
+            onlineStatus ===
+            "ONLINE"
+
                 ? "● ONLINE"
+
                 : "● LOCAL MODE",
+
             {
+
                 fontFamily:
                     "Arial",
 
@@ -3393,27 +6069,38 @@ class GameScene extends Phaser.Scene {
                 color:
                     onlineStatus ===
                     "ONLINE"
+
                         ? "#8cff9c"
+
                         : "#FFD166",
 
                 backgroundColor:
                     "#07111f",
 
                 padding: {
-                    x: 8,
-                    y: 5
+                    x:
+                        8,
+                    y:
+                        5
                 }
+
             }
         )
-        .setScrollFactor(0)
-        .setDepth(160);
+        .setScrollFactor(
+            0
+        )
+        .setDepth(
+            160
+        );
+
 
         const pause =
             this.add.text(
-                790,
+                780,
                 120,
                 "⏸ PAUSE",
                 {
+
                     fontFamily:
                         "Arial",
 
@@ -3430,31 +6117,51 @@ class GameScene extends Phaser.Scene {
                         "#07111f",
 
                     padding: {
-                        x: 9,
-                        y: 6
+                        x:
+                            9,
+                        y:
+                            6
                     }
+
                 }
             )
-            .setScrollFactor(0)
-            .setDepth(160)
+            .setScrollFactor(
+                0
+            )
+            .setDepth(
+                160
+            )
             .setInteractive({
-                useHandCursor: true
+                useHandCursor:
+                    true
             });
+
 
         pause.on(
             "pointerdown",
-            () =>
-                this.togglePause()
+            () => {
+
+                SFX.button();
+
+                this.togglePause();
+
+            }
         );
 
-        const sound =
+
+        this.soundButton =
             this.add.text(
-                895,
+                880,
                 120,
+
                 soundEnabled
+
                     ? "🔊 ON"
+
                     : "🔇 OFF",
+
                 {
+
                     fontFamily:
                         "Arial",
 
@@ -3471,43 +6178,171 @@ class GameScene extends Phaser.Scene {
                         "#07111f",
 
                     padding: {
-                        x: 9,
-                        y: 6
+                        x:
+                            9,
+                        y:
+                            6
                     }
+
                 }
             )
-            .setScrollFactor(0)
-            .setDepth(160)
+            .setScrollFactor(
+                0
+            )
+            .setDepth(
+                160
+            )
             .setInteractive({
-                useHandCursor: true
+                useHandCursor:
+                    true
             });
 
-        sound.on(
+
+        this.soundButton.on(
             "pointerdown",
             () => {
+
                 soundEnabled =
                     !soundEnabled;
 
+
                 saveSoundEnabled();
 
-                sound.setText(
+
+                this.soundButton.setText(
+
                     soundEnabled
+
                         ? "🔊 ON"
+
                         : "🔇 OFF"
+
                 );
 
-                if (soundEnabled) {
+
+                if (
+                    soundEnabled
+                ) {
+
                     SFX.button();
+
                 }
+
             }
         );
 
-        if (IS_TOUCH_DEVICE) {
-            this.mobileControls();
+
+        if (
+            this.level.boss
+        ) {
+
+            this.bossHud =
+                this.add.text(
+                    500,
+                    20,
+                    "BOSS HP: ♥ ♥ ♥ ♥ ♥",
+                    {
+
+                        fontFamily:
+                            "Arial",
+
+                        fontSize:
+                            "16px",
+
+                        fontStyle:
+                            "bold",
+
+                        color:
+                            "#ffb089",
+
+                        backgroundColor:
+                            "#07111f",
+
+                        padding: {
+                            x:
+                                12,
+                            y:
+                                6
+                        }
+
+                    }
+                )
+                .setOrigin(
+                    0.5,
+                    0
+                )
+                .setScrollFactor(
+                    0
+                )
+                .setDepth(
+                    170
+                );
+
         }
+
+
+        if (
+            IS_TOUCH_DEVICE
+        ) {
+
+            this.mobileControls();
+
+        }
+
     }
 
+
+    updateBossHud() {
+
+        if (
+            !this.bossHud ||
+            !this.boss
+        ) {
+
+            return;
+
+        }
+
+
+        if (
+            !this.boss.alive ||
+            this.boss.hp <=
+            0
+        ) {
+
+            this.bossHud
+                .setText(
+                    "BOSS: DIKALAHKAN ✓"
+                )
+                .setColor(
+                    "#8cff9c"
+                );
+
+
+            return;
+
+        }
+
+
+        this.bossHud
+            .setText(
+                `BOSS HP: ${"♥ ".repeat(
+                    this.boss.hp
+                )}`
+            )
+            .setColor(
+                "#ffb089"
+            );
+
+    }
+
+
+    // =================================================
+    // MOBILE CONTROLS
+    // =================================================
+
     mobileControls() {
+
         const left =
             this.add.rectangle(
                 75,
@@ -3517,9 +6352,14 @@ class GameScene extends Phaser.Scene {
                 0x07111f,
                 0.68
             )
-            .setScrollFactor(0)
-            .setDepth(150)
+            .setScrollFactor(
+                0
+            )
+            .setDepth(
+                150
+            )
             .setInteractive();
+
 
         const right =
             this.add.rectangle(
@@ -3530,9 +6370,14 @@ class GameScene extends Phaser.Scene {
                 0x07111f,
                 0.68
             )
-            .setScrollFactor(0)
-            .setDepth(150)
+            .setScrollFactor(
+                0
+            )
+            .setDepth(
+                150
+            )
             .setInteractive();
+
 
         const jump =
             this.add.circle(
@@ -3542,9 +6387,14 @@ class GameScene extends Phaser.Scene {
                 0x4b9b44,
                 0.78
             )
-            .setScrollFactor(0)
-            .setDepth(150)
+            .setScrollFactor(
+                0
+            )
+            .setDepth(
+                150
+            )
             .setInteractive();
+
 
         this.add.text(
             75,
@@ -3553,17 +6403,22 @@ class GameScene extends Phaser.Scene {
             {
                 fontFamily:
                     "Arial",
-
                 fontSize:
                     "32px",
-
                 color:
                     "#ffffff"
             }
         )
-        .setOrigin(0.5)
-        .setScrollFactor(0)
-        .setDepth(151);
+        .setOrigin(
+            0.5
+        )
+        .setScrollFactor(
+            0
+        )
+        .setDepth(
+            151
+        );
+
 
         this.add.text(
             175,
@@ -3572,17 +6427,22 @@ class GameScene extends Phaser.Scene {
             {
                 fontFamily:
                     "Arial",
-
                 fontSize:
                     "32px",
-
                 color:
                     "#ffffff"
             }
         )
-        .setOrigin(0.5)
-        .setScrollFactor(0)
-        .setDepth(151);
+        .setOrigin(
+            0.5
+        )
+        .setScrollFactor(
+            0
+        )
+        .setDepth(
+            151
+        );
+
 
         this.add.text(
             900,
@@ -3591,174 +6451,323 @@ class GameScene extends Phaser.Scene {
             {
                 fontFamily:
                     "Arial",
-
                 fontSize:
                     "31px",
-
                 color:
                     "#ffffff"
             }
         )
-        .setOrigin(0.5)
-        .setScrollFactor(0)
-        .setDepth(151);
+        .setOrigin(
+            0.5
+        )
+        .setScrollFactor(
+            0
+        )
+        .setDepth(
+            151
+        );
+
 
         left.on(
             "pointerdown",
             () => {
+
                 this.mobileInput.left =
                     true;
+
             }
         );
+
 
         left.on(
             "pointerup",
             () => {
+
                 this.mobileInput.left =
                     false;
+
             }
         );
+
 
         left.on(
             "pointerout",
             () => {
+
                 this.mobileInput.left =
                     false;
+
             }
         );
+
 
         right.on(
             "pointerdown",
             () => {
+
                 this.mobileInput.right =
                     true;
+
             }
         );
+
 
         right.on(
             "pointerup",
             () => {
+
                 this.mobileInput.right =
                     false;
+
             }
         );
+
 
         right.on(
             "pointerout",
             () => {
+
                 this.mobileInput.right =
                     false;
+
             }
         );
+
 
         jump.on(
             "pointerdown",
             () => {
+
                 this.mobileInput.jump =
                     true;
+
             }
         );
+
 
         jump.on(
             "pointerup",
             () => {
+
                 this.mobileInput.jump =
                     false;
+
             }
         );
+
     }
 
+
+    // =================================================
+    // HUD UPDATE
+    // =================================================
+
     updateScore() {
+
         this.scoreText.setText(
             `57 POINTS: ${this.score}`
         );
+
     }
 
+
     updateLives() {
+
         this.livesText.setText(
             `LIVES: ${"♥ ".repeat(
                 this.lives
             )}`
         );
+
     }
 
+
+    // =================================================
+    // DAMAGE
+    // =================================================
+
     loseLife() {
+
         if (
             this.respawning ||
+
             this.invulnerable ||
+
             this.gameFinished ||
+
             this.gameOverActive
         ) {
+
             return;
+
         }
+
 
         SFX.hit();
 
+
         this.cameras.main.shake(
-            150,
-            0.006
+            180,
+            0.008
         );
+
+
+        this.burst(
+            this.playerSprite.x,
+            this.playerSprite.y -
+            55,
+            0xff3333,
+            14
+        );
+
 
         this.lives--;
 
+
         this.updateLives();
 
+
         if (
-            this.lives <= 0
+            this.lives <=
+            0
         ) {
+
             this.showGameOver();
+
             return;
+
         }
+
 
         this.respawnPlayer();
+
     }
 
+
+    // =================================================
+    // RESPAWN
+    // =================================================
+
     respawnPlayer() {
-        if (this.respawning) {
+
+        if (
+            this.respawning
+        ) {
+
             return;
+
         }
 
-        this.respawning = true;
-        this.invulnerable = true;
 
-        this.mobileInput.left = false;
-        this.mobileInput.right = false;
-        this.mobileInput.jump = false;
+        this.respawning =
+            true;
+
+
+        this.invulnerable =
+            true;
+
+
+        this.mobileInput = {
+            left:
+                false,
+            right:
+                false,
+            jump:
+                false
+        };
+
 
         this.tweens.killTweensOf(
             this.playerSprite
         );
 
-        this.playerSprite
-            .setAlpha(0);
+
+        this.playerSprite.setAlpha(
+            0
+        );
+
 
         this.playerBody.body.enable =
             false;
 
+
+        const text =
+            this.add.text(
+                500,
+                300,
+                "RESPAWN...",
+                {
+
+                    fontFamily:
+                        "Arial",
+
+                    fontSize:
+                        "30px",
+
+                    fontStyle:
+                        "bold",
+
+                    color:
+                        "#ffffff",
+
+                    backgroundColor:
+                        "#07111f",
+
+                    padding: {
+                        x:
+                            22,
+                        y:
+                            12
+                    }
+
+                }
+            )
+            .setOrigin(
+                0.5
+            )
+            .setScrollFactor(
+                0
+            )
+            .setDepth(
+                500
+            );
+
+
         this.time.delayedCall(
             500,
             () => {
+
                 this.playerBody.body.enable =
                     true;
+
 
                 this.playerBody.body.reset(
                     this.checkpointX,
                     this.checkpointY
                 );
 
-                this.playerBody.body
-                    .setVelocity(
-                        0,
-                        0
-                    );
+
+                this.playerBody.body.setVelocity(
+                    0,
+                    0
+                );
+
+
+                this.tweens.killTweensOf(
+                    this.playerSprite
+                );
+
 
                 this.playerSprite.stop();
+
 
                 this.playerSprite
                     .setTexture(
                         "jago-idle"
                     )
-                    .setAngle(0)
+                    .setAngle(
+                        0
+                    )
                     .setFlipX(
                         this.facingLeft
                     )
@@ -3766,98 +6775,212 @@ class GameScene extends Phaser.Scene {
                         PLAYER_VISUAL_SIZE,
                         PLAYER_VISUAL_SIZE
                     )
-                    .setAlpha(1);
+                    .setAlpha(
+                        1
+                    );
+
 
                 this.syncPlayerVisual();
+
 
                 this.cameras.main.scrollX =
                     Phaser.Math.Clamp(
                         this.checkpointX -
-                            350,
+                        350,
                         0,
                         this.level.worldWidth -
-                            GAME_WIDTH
+                        GAME_WIDTH
                     );
+
+
+                text.destroy();
+
 
                 this.respawning =
                     false;
 
+
                 this.tweens.add({
+
                     targets:
                         this.playerSprite,
 
                     alpha: {
-                        from: 0.35,
-                        to: 1
+                        from:
+                            0.35,
+                        to:
+                            1
                     },
 
-                    duration: 120,
+                    duration:
+                        120,
 
-                    yoyo: true,
+                    yoyo:
+                        true,
 
-                    repeat: 4,
+                    repeat:
+                        4,
 
-                    onComplete: () => {
-                        this.playerSprite
-                            .setAlpha(1);
+                    onComplete:
+                        () => {
 
-                        this.invulnerable =
-                            false;
-                    }
+                            this.playerSprite.setAlpha(
+                                1
+                            );
+
+
+                            this.invulnerable =
+                                false;
+
+                        }
+
                 });
+
             }
         );
+
     }
 
+
+    // =================================================
+    // PLAYER
+    // =================================================
+
     syncPlayerVisual() {
+
         if (
-            !this.playerBody ||
-            !this.playerBody.body
+            !this.playerBody?.body
         ) {
+
             return;
+
         }
+
 
         this.playerSprite
             .setPosition(
                 this.playerBody.x,
                 this.playerBody.body
                     .bottom +
-                    PLAYER_FEET_OFFSET
+                PLAYER_FEET_OFFSET
             )
             .setDisplaySize(
                 PLAYER_VISUAL_SIZE,
                 PLAYER_VISUAL_SIZE
             );
+
     }
+
+
+    stopEnemies() {
+
+        this.enemies.forEach(
+            enemy => {
+
+                if (
+                    enemy.alive &&
+                    enemy.body?.body
+                ) {
+
+                    enemy.body.body
+                        .setVelocityX(
+                            0
+                        );
+
+                }
+
+            }
+        );
+
+
+        if (
+            this.boss?.alive &&
+            this.boss.body?.body
+        ) {
+
+            this.boss.body.body
+                .setVelocityX(
+                    0
+                );
+
+        }
+
+    }
+
+
+    // =================================================
+    // PAUSE
+    // =================================================
 
     togglePause() {
+
         if (
             this.gameFinished ||
+
             this.gameOverActive ||
+
             this.respawning
         ) {
+
             return;
+
         }
 
-        if (this.isPaused) {
-            this.resumeGame();
-        } else {
-            this.pauseGame();
-        }
+
+        this.isPaused
+
+            ? this.resumeGame()
+
+            : this.pauseGame();
+
     }
 
+
     pauseGame() {
-        if (this.isPaused) {
+
+        if (
+            this.isPaused
+        ) {
+
             return;
+
         }
 
-        this.isPaused = true;
 
-        this.mobileInput.left = false;
-        this.mobileInput.right = false;
-        this.mobileInput.jump = false;
+        this.isPaused =
+            true;
+
+
+        this.mobileInput = {
+            left:
+                false,
+            right:
+                false,
+            jump:
+                false
+        };
+
 
         this.physics.pause();
+
+
+        this.playerSprite.anims
+            ?.pause();
+
+
+        this.enemies.forEach(
+            enemy => {
+
+                enemy.sprite?.anims
+                    ?.pause();
+
+            }
+        );
+
+
+        this.boss?.sprite?.anims
+            ?.pause();
+
 
         const overlay =
             this.add.rectangle(
@@ -3868,15 +6991,21 @@ class GameScene extends Phaser.Scene {
                 0x07111f,
                 0.9
             )
-            .setScrollFactor(0)
-            .setDepth(1000);
+            .setScrollFactor(
+                0
+            )
+            .setDepth(
+                1000
+            );
+
 
         const title =
             this.add.text(
                 500,
-                150,
+                140,
                 "PAUSED",
                 {
+
                     fontFamily:
                         "Arial",
 
@@ -3888,84 +7017,114 @@ class GameScene extends Phaser.Scene {
 
                     color:
                         "#FFD166"
+
                 }
             )
-            .setOrigin(0.5)
-            .setScrollFactor(0)
-            .setDepth(1001);
+            .setOrigin(
+                0.5
+            )
+            .setScrollFactor(
+                0
+            )
+            .setDepth(
+                1001
+            );
+
 
         const resume =
             createButton(
                 this,
                 500,
-                270,
-                280,
-                58,
+                260,
+                300,
+                60,
                 "▶ LANJUTKAN",
-                () =>
-                    this.resumeGame(),
+                () => {
+
+                    this.resumeGame();
+
+                },
                 {
-                    fixed: true,
-                    depth: 1002
+                    fixed:
+                        true,
+                    depth:
+                        1002
                 }
             );
+
 
         const restart =
             createButton(
                 this,
                 500,
-                350,
-                280,
-                58,
+                340,
+                300,
+                60,
                 "↻ ULANGI LEVEL",
                 () => {
+
                     this.physics.resume();
+
 
                     this.scene.restart({
                         levelId:
                             this.levelId
                     });
+
                 },
                 {
-                    fixed: true,
 
-                    depth: 1002,
+                    fixed:
+                        true,
+
+                    depth:
+                        1002,
 
                     color:
                         0x986128,
 
                     stroke:
                         0x623d18
+
                 }
             );
+
 
         const menu =
             createButton(
                 this,
                 500,
-                430,
-                280,
-                58,
+                420,
+                300,
+                60,
                 "⌂ KEMBALI KE MENU",
                 () => {
+
                     this.physics.resume();
+
 
                     this.scene.start(
                         "MenuScene"
                     );
+
                 },
                 {
-                    fixed: true,
 
-                    depth: 1002,
+                    fixed:
+                        true,
+
+                    depth:
+                        1002,
 
                     color:
                         0x986128,
 
                     stroke:
                         0x623d18
+
                 }
             );
+
 
         this.pauseObjects = [
             overlay,
@@ -3974,97 +7133,247 @@ class GameScene extends Phaser.Scene {
             ...restart,
             ...menu
         ];
+
     }
 
+
     resumeGame() {
-        if (!this.isPaused) {
+
+        if (
+            !this.isPaused
+        ) {
+
             return;
+
         }
 
-        this.isPaused = false;
+
+        this.isPaused =
+            false;
+
 
         this.physics.resume();
 
-        this.pauseObjects
-            .forEach(
-                object => {
-                    if (
-                        object &&
-                        object.active
-                    ) {
-                        object.destroy();
-                    }
-                }
-            );
 
-        this.pauseObjects = [];
+        this.playerSprite.anims
+            ?.resume();
+
+
+        this.enemies.forEach(
+            enemy => {
+
+                enemy.sprite?.anims
+                    ?.resume();
+
+            }
+        );
+
+
+        this.boss?.sprite?.anims
+            ?.resume();
+
+
+        this.pauseObjects.forEach(
+            object => {
+
+                if (
+                    object?.active
+                ) {
+
+                    object.destroy();
+
+                }
+
+            }
+        );
+
+
+        this.pauseObjects =
+            [];
+
     }
 
+
+    // =================================================
+    // GAME OVER
+    // =================================================
+
     showGameOver() {
+
         if (
             this.gameOverActive
         ) {
+
             return;
+
         }
 
-        this.gameOverActive = true;
+
+        this.gameOverActive =
+            true;
+
 
         this.tweens.killTweensOf(
             this.playerSprite
         );
 
-        this.playerSprite
-            .setAlpha(1);
+
+        this.playerSprite.setAlpha(
+            1
+        );
+
 
         this.playerBody.body.enable =
             false;
+
+
+        this.stopEnemies();
+
 
         this.resultPanel(
             "GAME OVER",
             false,
             false
         );
+
     }
 
+
+    // =================================================
+    // FINISH LEVEL
+    // =================================================
+
     async finishLevel() {
-        if (this.gameFinished) {
+
+        if (
+            this.gameFinished
+        ) {
+
             return;
+
         }
 
-        this.gameFinished = true;
+
+        this.gameFinished =
+            true;
+
 
         this.tweens.killTweensOf(
             this.playerSprite
         );
 
-        this.playerSprite
-            .setAlpha(1);
 
-        this.playerBody.body
-            .setVelocity(0, 0);
+        this.playerSprite.setAlpha(
+            1
+        );
+
+
+        this.playerBody.body.setVelocity(
+            0,
+            0
+        );
+
+
+        this.stopEnemies();
+
 
         SFX.finish();
+
+
+        this.cameras.main.shake(
+            180,
+            0.004
+        );
+
+
+        this.burst(
+            this.playerSprite.x,
+            this.playerSprite.y -
+            80,
+            0xffd700,
+            22
+        );
+
+
+        const progress =
+            loadProgress();
+
 
         if (
             this.levelId ===
             "1-1"
         ) {
-            const progress =
-                loadProgress();
 
             progress.world12 =
                 true;
 
-            saveProgress(
-                progress
-            );
         }
+
+
+        if (
+            this.levelId ===
+            "1-2"
+        ) {
+
+            progress.world13 =
+                true;
+
+        }
+
+
+        saveProgress(
+            progress
+        );
+
 
         submitLocalScore(
             this.playerName,
             this.score,
             this.levelId
         );
+
+
+        const savingText =
+            this.add.text(
+                500,
+                300,
+                "MENYIMPAN SKOR...",
+                {
+
+                    fontFamily:
+                        "Arial",
+
+                    fontSize:
+                        "22px",
+
+                    fontStyle:
+                        "bold",
+
+                    color:
+                        "#ffffff",
+
+                    backgroundColor:
+                        "#07111f",
+
+                    padding: {
+                        x:
+                            18,
+                        y:
+                            10
+                    }
+
+                }
+            )
+            .setOrigin(
+                0.5
+            )
+            .setScrollFactor(
+                0
+            )
+            .setDepth(
+                1050
+            );
+
 
         const uploaded =
             await submitOnlineScore(
@@ -4073,42 +7382,68 @@ class GameScene extends Phaser.Scene {
                 this.levelId
             );
 
+
+        if (
+            savingText.active
+        ) {
+
+            savingText.destroy();
+
+        }
+
+
         if (
             !this.scene.isActive(
                 "GameScene"
             )
         ) {
+
             return;
+
         }
+
 
         this.resultPanel(
             `${this.level.name} COMPLETE!`,
             true,
             uploaded
         );
+
     }
+
+
+    // =================================================
+    // RESULT PANEL
+    // =================================================
 
     resultPanel(
         title,
         completed,
         uploaded = false
     ) {
+
         this.add.rectangle(
             500,
             300,
             650,
-            390,
+            400,
             0x07111f,
             0.97
         )
-        .setScrollFactor(0)
-        .setDepth(1100);
+        .setScrollFactor(
+            0
+        )
+        .setDepth(
+            1100
+        );
+
 
         this.add.text(
             500,
-            145,
+            140,
             title,
             {
+
                 fontFamily:
                     "Arial",
 
@@ -4120,17 +7455,26 @@ class GameScene extends Phaser.Scene {
 
                 color:
                     "#FFD166"
+
             }
         )
-        .setOrigin(0.5)
-        .setScrollFactor(0)
-        .setDepth(1101);
+        .setOrigin(
+            0.5
+        )
+        .setScrollFactor(
+            0
+        )
+        .setDepth(
+            1101
+        );
+
 
         this.add.text(
             500,
-            205,
+            195,
             `PLAYER: ${this.playerName}`,
             {
+
                 fontFamily:
                     "Arial",
 
@@ -4142,17 +7486,26 @@ class GameScene extends Phaser.Scene {
 
                 color:
                     "#ffffff"
+
             }
         )
-        .setOrigin(0.5)
-        .setScrollFactor(0)
-        .setDepth(1101);
+        .setOrigin(
+            0.5
+        )
+        .setScrollFactor(
+            0
+        )
+        .setDepth(
+            1101
+        );
+
 
         this.add.text(
             500,
-            245,
+            235,
             `57 POINTS: ${this.score}`,
             {
+
                 fontFamily:
                     "Arial",
 
@@ -4164,17 +7517,26 @@ class GameScene extends Phaser.Scene {
 
                 color:
                     "#ffffff"
+
             }
         )
-        .setOrigin(0.5)
-        .setScrollFactor(0)
-        .setDepth(1101);
+        .setOrigin(
+            0.5
+        )
+        .setScrollFactor(
+            0
+        )
+        .setDepth(
+            1101
+        );
+
 
         this.add.text(
             500,
-            285,
+            275,
             `SISA NYAWA: ${this.lives}`,
             {
+
                 fontFamily:
                     "Arial",
 
@@ -4183,20 +7545,36 @@ class GameScene extends Phaser.Scene {
 
                 color:
                     "#ffffff"
+
             }
         )
-        .setOrigin(0.5)
-        .setScrollFactor(0)
-        .setDepth(1101);
+        .setOrigin(
+            0.5
+        )
+        .setScrollFactor(
+            0
+        )
+        .setDepth(
+            1101
+        );
 
-        if (completed) {
+
+        if (
+            completed
+        ) {
+
             this.add.text(
                 500,
-                325,
+                315,
+
                 uploaded
+
                     ? "✓ SKOR TERSIMPAN ONLINE"
+
                     : "✓ SKOR TERSIMPAN LOKAL",
+
                 {
+
                     fontFamily:
                         "Arial",
 
@@ -4208,48 +7586,73 @@ class GameScene extends Phaser.Scene {
 
                     color:
                         uploaded
+
                             ? "#8cff9c"
+
                             : "#FFD166"
+
                 }
             )
-            .setOrigin(0.5)
-            .setScrollFactor(0)
-            .setDepth(1101);
+            .setOrigin(
+                0.5
+            )
+            .setScrollFactor(
+                0
+            )
+            .setDepth(
+                1101
+            );
+
         }
+
 
         createButton(
             this,
             330,
-            400,
+            390,
             190,
             48,
             "ULANGI",
-            () =>
+            () => {
+
                 this.scene.restart({
                     levelId:
                         this.levelId
-                }),
+                });
+
+            },
             {
-                fixed: true,
-                depth: 1102
+                fixed:
+                    true,
+                depth:
+                    1102,
+                fontSize:
+                    "16px"
             }
         );
+
 
         createButton(
             this,
             670,
-            400,
+            390,
             190,
             48,
             "LEADERBOARD",
-            () =>
+            () => {
+
                 this.scene.start(
                     "LeaderboardScene"
-                ),
-            {
-                fixed: true,
+                );
 
-                depth: 1102,
+            },
+            {
+
+                fixed:
+                    true,
+
+                depth:
+                    1102,
 
                 color:
                     0x986128,
@@ -4259,53 +7662,130 @@ class GameScene extends Phaser.Scene {
 
                 fontSize:
                     "15px"
+
             }
         );
 
+
         if (
             completed &&
-            this.levelId === "1-1"
+            this.levelId ===
+            "1-1"
         ) {
+
             createButton(
                 this,
                 500,
-                465,
+                460,
                 260,
                 48,
                 "LANJUT WORLD 1-2 ▶",
-                () =>
+                () => {
+
                     this.scene.start(
                         "GameScene",
                         {
                             levelId:
                                 "1-2"
                         }
-                    ),
-                {
-                    fixed: true,
+                    );
 
-                    depth: 1102,
+                },
+                {
+
+                    fixed:
+                        true,
+
+                    depth:
+                        1102,
 
                     fontSize:
                         "16px"
+
                 }
             );
-        } else {
+
+        }
+
+        else if (
+            completed &&
+            this.levelId ===
+            "1-2"
+        ) {
+
             createButton(
                 this,
                 500,
-                465,
+                460,
+                260,
+                48,
+                "LANJUT WORLD 1-3 ▶",
+                () => {
+
+                    this.scene.start(
+                        "GameScene",
+                        {
+                            levelId:
+                                "1-3"
+                        }
+                    );
+
+                },
+                {
+
+                    fixed:
+                        true,
+
+                    depth:
+                        1102,
+
+                    fontSize:
+                        "16px"
+
+                }
+            );
+
+        }
+
+        else {
+
+            createButton(
+                this,
+                500,
+                460,
                 220,
                 48,
-                "LEVEL SELECT",
-                () =>
-                    this.scene.start(
-                        "LevelSelectScene"
-                    ),
-                {
-                    fixed: true,
 
-                    depth: 1102,
+                this.levelId ===
+                "1-3" &&
+                completed
+
+                    ? "⌂ KEMBALI KE MENU"
+
+                    : "LEVEL SELECT",
+
+                () => {
+
+                    this.scene.start(
+
+                        this.levelId ===
+                        "1-3" &&
+                        completed
+
+                            ? "MenuScene"
+
+                            : "LevelSelectScene"
+
+                    );
+
+                },
+                {
+
+                    fixed:
+                        true,
+
+                    depth:
+                        1102,
 
                     color:
                         0x3f4650,
@@ -4315,102 +7795,183 @@ class GameScene extends Phaser.Scene {
 
                     fontSize:
                         "15px"
+
                 }
             );
+
         }
+
     }
 
+
+    // =================================================
+    // UPDATE
+    // =================================================
+
     update() {
+
         const pausePressed =
+
             Phaser.Input.Keyboard
                 .JustDown(
                     this.pauseKeyP
-                ) ||
+                )
+
+            ||
+
             Phaser.Input.Keyboard
                 .JustDown(
                     this.pauseKeyEsc
                 );
 
-        if (pausePressed) {
+
+        if (
+            pausePressed
+        ) {
+
             SFX.button();
+
             this.togglePause();
+
         }
 
-        if (this.isPaused) {
+
+        if (
+            this.isPaused
+        ) {
+
             return;
+
         }
+
 
         this.updateEnemies();
 
+        this.updateBoss();
+
+
         if (
             this.respawning ||
+
             this.gameOverActive ||
+
             this.gameFinished
         ) {
+
             return;
+
         }
+
 
         if (
             this.playerBody.y >
             700
         ) {
+
             this.loseLife();
+
             return;
+
         }
 
+
         this.playerBody.body
-            .setVelocityX(0);
+            .setVelocityX(
+                0
+            );
+
 
         const onGround =
+
             this.playerBody.body
-                .blocked.down ||
+                .blocked.down
+
+            ||
+
             this.playerBody.body
                 .touching.down;
 
+
         if (
             this.cursors.left.isDown ||
+
             this.mobileInput.left
         ) {
+
             this.playerBody.body
                 .setVelocityX(
                     -PLAYER_SPEED
                 );
 
-            this.facingLeft = true;
+
+            this.facingLeft =
+                true;
+
 
             this.playerSprite
-                .setFlipX(true);
+                .setFlipX(
+                    true
+                );
 
-            if (onGround) {
+
+            if (
+                onGround
+            ) {
+
                 this.playerSprite
                     .play(
                         "jago-run",
                         true
                     );
+
             }
-        } else if (
+
+        }
+
+
+        else if (
             this.cursors.right.isDown ||
+
             this.mobileInput.right
         ) {
+
             this.playerBody.body
                 .setVelocityX(
                     PLAYER_SPEED
                 );
 
-            this.facingLeft = false;
+
+            this.facingLeft =
+                false;
+
 
             this.playerSprite
-                .setFlipX(false);
+                .setFlipX(
+                    false
+                );
 
-            if (onGround) {
+
+            if (
+                onGround
+            ) {
+
                 this.playerSprite
                     .play(
                         "jago-run",
                         true
                     );
+
             }
-        } else if (onGround) {
+
+        }
+
+
+        else if (
+            onGround
+        ) {
+
             this.playerSprite.stop();
+
 
             this.playerSprite
                 .setTexture(
@@ -4419,96 +7980,144 @@ class GameScene extends Phaser.Scene {
                 .setFlipX(
                     this.facingLeft
                 );
+
         }
+
 
         const mobileJumpPressed =
             this.mobileInput.jump;
 
+
         this.mobileInput.jump =
             false;
 
+
         const jumpPressed =
+
             Phaser.Input.Keyboard
                 .JustDown(
                     this.cursors.up
-                ) ||
+                )
+
+            ||
+
             Phaser.Input.Keyboard
                 .JustDown(
                     this.cursors.space
-                ) ||
+                )
+
+            ||
+
             mobileJumpPressed;
+
 
         if (
             jumpPressed &&
             onGround
         ) {
+
             SFX.jump();
+
 
             this.playerBody.body
                 .setVelocityY(
                     -JUMP_POWER
                 );
+
         }
 
-        if (!onGround) {
+
+        if (
+            !onGround
+        ) {
+
             this.playerSprite.stop();
+
 
             if (
                 this.playerBody.body
-                    .velocity.y < 0
+                    .velocity.y <
+                0
             ) {
+
                 this.playerSprite
                     .setTexture(
                         "jago-run-4"
                     )
                     .setAngle(
                         this.facingLeft
+
                             ? -6
+
                             : 6
                     );
-            } else {
+
+            }
+
+            else {
+
                 this.playerSprite
                     .setTexture(
                         "jago-run-5"
                     )
                     .setAngle(
                         this.facingLeft
+
                             ? 4
+
                             : -4
                     );
+
             }
+
 
             this.playerSprite
                 .setFlipX(
                     this.facingLeft
                 );
-        } else {
-            this.playerSprite
-                .setAngle(0);
+
         }
+
+        else {
+
+            this.playerSprite
+                .setAngle(
+                    0
+                );
+
+        }
+
 
         if (
             !this.invulnerable &&
             this.playerSprite.alpha !==
-                1
+            1
         ) {
+
             this.playerSprite
-                .setAlpha(1);
+                .setAlpha(
+                    1
+                );
+
         }
 
+
         this.syncPlayerVisual();
+
 
         const target =
             this.playerBody.x -
             350;
+
 
         const cameraX =
             Phaser.Math.Clamp(
                 target,
                 0,
                 this.level.worldWidth -
-                    GAME_WIDTH
+                GAME_WIDTH
             );
+
 
         this.cameras.main.scrollX =
             Phaser.Math.Linear(
@@ -4516,15 +8125,20 @@ class GameScene extends Phaser.Scene {
                 cameraX,
                 0.15
             );
+
     }
+
 }
 
+
 // =====================================================
-// RESPONSIVE CONFIG
+// CONFIG
 // =====================================================
 
 const gameConfig = {
-    type: Phaser.AUTO,
+
+    type:
+        Phaser.AUTO,
 
     width:
         GAME_WIDTH,
@@ -4539,6 +8153,7 @@ const gameConfig = {
         "#07111f",
 
     scale: {
+
         mode:
             Phaser.Scale.FIT,
 
@@ -4550,19 +8165,26 @@ const gameConfig = {
 
         height:
             GAME_HEIGHT
+
     },
 
     physics: {
+
         default:
             "arcade",
 
         arcade: {
+
             gravity: {
-                y: 900
+                y:
+                    900
             },
 
-            debug: false
+            debug:
+                false
+
         }
+
     },
 
     scene: [
@@ -4573,69 +8195,112 @@ const gameConfig = {
         LeaderboardScene,
         GameScene
     ]
+
 };
+
 
 // =====================================================
 // SAFE START
-// MENCEGAH CANVAS DOBEL SAAT VITE HOT RELOAD
 // =====================================================
 
 if (
     window.__JAGO57_GAME__
 ) {
+
     try {
+
         window
             .__JAGO57_GAME__
-            .destroy(true);
-    } catch (error) {
+            .destroy(
+                true
+            );
+
+    }
+
+    catch (
+        error
+    ) {
+
         console.warn(
             "Old Phaser game cleanup:",
             error
         );
+
     }
+
 
     window.__JAGO57_GAME__ =
         null;
+
 }
+
 
 const gameContainer =
     document.getElementById(
         "game-container"
     );
 
-if (gameContainer) {
+
+if (
+    gameContainer
+) {
+
     gameContainer.replaceChildren();
+
 }
+
 
 window.__JAGO57_GAME__ =
     new Phaser.Game(
         gameConfig
     );
 
-if (import.meta.hot) {
+
+if (
+    import.meta.hot
+) {
+
     import.meta.hot.dispose(
         () => {
+
             if (
                 window.__JAGO57_GAME__
             ) {
+
                 try {
+
                     window
                         .__JAGO57_GAME__
-                        .destroy(true);
-                } catch {}
+                        .destroy(
+                            true
+                        );
+
+                }
+
+                catch {}
+
 
                 window.__JAGO57_GAME__ =
                     null;
+
             }
+
 
             const container =
                 document.getElementById(
                     "game-container"
                 );
 
-            if (container) {
+
+            if (
+                container
+            ) {
+
                 container.replaceChildren();
+
             }
+
         }
     );
+
 }
