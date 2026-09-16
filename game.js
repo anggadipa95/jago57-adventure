@@ -294,11 +294,10 @@ function playTone(
 
     oscillator.type = type;
 
-    oscillator.frequency
-        .setValueAtTime(
-            startFrequency,
-            now
-        );
+    oscillator.frequency.setValueAtTime(
+        startFrequency,
+        now
+    );
 
     if (endFrequency !== null) {
         oscillator.frequency
@@ -311,33 +310,32 @@ function playTone(
             );
     }
 
-    gain.gain
-        .setValueAtTime(
-            0.0001,
-            now
-        );
+    gain.gain.setValueAtTime(
+        0.0001,
+        now
+    );
 
-    gain.gain
-        .exponentialRampToValueAtTime(
-            Math.max(
-                0.0001,
-                volume
-            ),
-            now + 0.015
-        );
-
-    gain.gain
-        .exponentialRampToValueAtTime(
+    gain.gain.exponentialRampToValueAtTime(
+        Math.max(
             0.0001,
-            now + duration
-        );
+            volume
+        ),
+        now + 0.015
+    );
+
+    gain.gain.exponentialRampToValueAtTime(
+        0.0001,
+        now + duration
+    );
 
     oscillator.connect(gain);
+
     gain.connect(
         audioContext.destination
     );
 
     oscillator.start(now);
+
     oscillator.stop(
         now + duration + 0.03
     );
@@ -461,7 +459,7 @@ const SFX = {
 };
 
 // =====================================================
-// SUPABASE
+// SUPABASE FUNCTIONS
 // =====================================================
 
 async function testOnlineConnection() {
@@ -484,7 +482,7 @@ async function testOnlineConnection() {
         return true;
     } catch (error) {
         console.error(
-            "Supabase connection:",
+            "Supabase connection error:",
             error
         );
 
@@ -524,8 +522,10 @@ async function submitOnlineScore(
                 .insert({
                     player_name:
                         cleanName,
+
                     score:
                         cleanScore,
+
                     level_id:
                         levelId
                 });
@@ -537,7 +537,7 @@ async function submitOnlineScore(
         return true;
     } catch (error) {
         console.error(
-            "Score upload:",
+            "Score upload error:",
             error
         );
 
@@ -589,7 +589,7 @@ async function getOnlineBestScore(
             : 0;
     } catch (error) {
         console.error(
-            "Best score:",
+            "Best score error:",
             error
         );
 
@@ -640,12 +640,13 @@ async function getOnlineLeaderboard() {
                     row.score || 0
                 );
 
-            const current =
+            const existing =
                 unique.get(name);
 
             if (
-                !current ||
-                score > current.score
+                !existing ||
+                score >
+                existing.score
             ) {
                 unique.set(
                     name,
@@ -671,7 +672,7 @@ async function getOnlineLeaderboard() {
             .slice(0, 10);
     } catch (error) {
         console.error(
-            "Leaderboard:",
+            "Leaderboard error:",
             error
         );
 
@@ -825,7 +826,7 @@ const LEVELS = {
 };
 
 // =====================================================
-// BUTTON
+// BUTTON HELPER
 // =====================================================
 
 function createButton(
@@ -922,7 +923,7 @@ function createButton(
 }
 
 // =====================================================
-// BOOT
+// BOOT SCENE
 // =====================================================
 
 class BootScene extends Phaser.Scene {
@@ -1012,7 +1013,8 @@ class BootScene extends Phaser.Scene {
 }
 
 // =====================================================
-// NAME
+// NAME SCENE
+// MOBILE TOUCH KEYBOARD FIX
 // =====================================================
 
 class NameScene extends Phaser.Scene {
@@ -1056,6 +1058,14 @@ class NameScene extends Phaser.Scene {
             0x3d873d
         );
 
+        this.add.rectangle(
+            500,
+            532,
+            1000,
+            10,
+            0x55a84f
+        );
+
         this.add.sprite(
             175,
             525,
@@ -1083,14 +1093,18 @@ class NameScene extends Phaser.Scene {
             500,
             300,
             540,
-            390,
+            400,
             0x07111f,
-            0.88
+            0.9
+        )
+        .setStrokeStyle(
+            4,
+            0x26384a
         );
 
         this.add.text(
             500,
-            140,
+            130,
             this.editing
                 ? "UBAH NAMA PEMAIN"
                 : "WELCOME",
@@ -1112,7 +1126,7 @@ class NameScene extends Phaser.Scene {
 
         this.add.text(
             500,
-            190,
+            180,
             "JAGO57 ADVENTURE",
             {
                 fontFamily:
@@ -1132,8 +1146,10 @@ class NameScene extends Phaser.Scene {
 
         this.add.text(
             500,
-            235,
-            "Ketik nama pemain (maks. 12 karakter)",
+            220,
+            IS_TOUCH_DEVICE
+                ? "Tap kotak nama untuk mengetik"
+                : "Ketik nama pemain (maks. 12 karakter)",
             {
                 fontFamily:
                     "Arial",
@@ -1147,31 +1163,39 @@ class NameScene extends Phaser.Scene {
         )
         .setOrigin(0.5);
 
-        this.add.rectangle(
-            500,
-            305,
-            360,
-            60,
-            0xffffff,
-            0.12
-        )
-        .setStrokeStyle(
-            3,
-            0xffd166
-        );
+        this.nameBox =
+            this.add.rectangle(
+                500,
+                295,
+                360,
+                65,
+                0xffffff,
+                0.12
+            )
+            .setStrokeStyle(
+                3,
+                0xffd166
+            )
+            .setInteractive({
+                useHandCursor: true
+            });
 
         this.nameText =
             this.add.text(
                 500,
-                305,
+                295,
                 this.typedName ||
-                    "_",
+                    (
+                        IS_TOUCH_DEVICE
+                            ? "TAP UNTUK KETIK"
+                            : "_"
+                    ),
                 {
                     fontFamily:
                         "Arial",
 
                     fontSize:
-                        "27px",
+                        "25px",
 
                     fontStyle:
                         "bold",
@@ -1180,12 +1204,27 @@ class NameScene extends Phaser.Scene {
                         "#ffffff"
                 }
             )
-            .setOrigin(0.5);
+            .setOrigin(0.5)
+            .setInteractive({
+                useHandCursor: true
+            });
+
+        this.nameBox.on(
+            "pointerdown",
+            () =>
+                this.openNameInput()
+        );
+
+        this.nameText.on(
+            "pointerdown",
+            () =>
+                this.openNameInput()
+        );
 
         this.errorText =
             this.add.text(
                 500,
-                350,
+                345,
                 "",
                 {
                     fontFamily:
@@ -1203,19 +1242,28 @@ class NameScene extends Phaser.Scene {
         createButton(
             this,
             500,
-            420,
-            260,
+            410,
+            270,
             58,
             "START ADVENTURE",
-            () =>
-                this.submitName()
+            () => {
+                if (
+                    IS_TOUCH_DEVICE &&
+                    !this.typedName.trim()
+                ) {
+                    this.openNameInput();
+                    return;
+                }
+
+                this.submitName();
+            }
         );
 
         if (this.editing) {
             createButton(
                 this,
                 500,
-                490,
+                485,
                 210,
                 44,
                 "BATAL",
@@ -1260,6 +1308,7 @@ class NameScene extends Phaser.Scene {
                         );
 
                     this.refreshName();
+
                     return;
                 }
 
@@ -1285,9 +1334,45 @@ class NameScene extends Phaser.Scene {
         );
     }
 
+    openNameInput() {
+        unlockAudio();
+
+        const result =
+            window.prompt(
+                "Masukkan nama pemain (maks. 12 karakter):",
+                this.typedName || ""
+            );
+
+        if (
+            result === null
+        ) {
+            return;
+        }
+
+        this.typedName =
+            String(result)
+                .trim()
+                .replace(
+                    /\s+/g,
+                    " "
+                )
+                .slice(
+                    0,
+                    12
+                )
+                .toUpperCase();
+
+        this.refreshName();
+    }
+
     refreshName() {
         this.nameText.setText(
-            this.typedName || "_"
+            this.typedName ||
+                (
+                    IS_TOUCH_DEVICE
+                        ? "TAP UNTUK KETIK"
+                        : "_"
+                )
         );
 
         this.errorText.setText("");
@@ -1314,7 +1399,7 @@ class NameScene extends Phaser.Scene {
 }
 
 // =====================================================
-// MENU
+// MENU SCENE
 // =====================================================
 
 class MenuScene extends Phaser.Scene {
@@ -1389,6 +1474,14 @@ class MenuScene extends Phaser.Scene {
             1000,
             70,
             0x3d873d
+        );
+
+        this.add.rectangle(
+            500,
+            532,
+            1000,
+            10,
+            0x55a84f
         );
 
         this.add.sprite(
@@ -2395,7 +2488,7 @@ class LeaderboardScene extends Phaser.Scene {
 }
 
 // =====================================================
-// GAME
+// GAME SCENE
 // =====================================================
 
 class GameScene extends Phaser.Scene {
@@ -2632,6 +2725,20 @@ class GameScene extends Phaser.Scene {
         this.hud();
 
         this.syncPlayerVisual();
+
+        this.input.on(
+            "pointerup",
+            () => {
+                this.mobileInput.left =
+                    false;
+
+                this.mobileInput.right =
+                    false;
+
+                this.mobileInput.jump =
+                    false;
+            }
+        );
     }
 
     groundSegments() {
@@ -2888,7 +2995,8 @@ class GameScene extends Phaser.Scene {
             this.respawning ||
             this.invulnerable ||
             this.gameFinished ||
-            this.gameOverActive
+            this.gameOverActive ||
+            this.isPaused
         ) {
             return;
         }
@@ -2897,12 +3005,17 @@ class GameScene extends Phaser.Scene {
             this.playerBody.body
                 .velocity.y > 80;
 
+        const playerBottom =
+            this.playerBody.body
+                .bottom;
+
+        const enemyTop =
+            enemy.body.body.top;
+
         if (
             falling &&
-            this.playerBody.body
-                .bottom <
-            enemy.body.body.top +
-                32
+            playerBottom <
+            enemyTop + 32
         ) {
             enemy.alive = false;
 
@@ -2948,7 +3061,9 @@ class GameScene extends Phaser.Scene {
                 if (
                     !enemy.alive ||
                     !enemy.body.active
-                ) return;
+                ) {
+                    return;
+                }
 
                 if (
                     enemy.body.x <=
@@ -3039,7 +3154,9 @@ class GameScene extends Phaser.Scene {
     activateCheckpoint() {
         if (
             this.checkpointActive
-        ) return;
+        ) {
+            return;
+        }
 
         this.checkpointActive = true;
 
@@ -3174,6 +3291,26 @@ class GameScene extends Phaser.Scene {
         .setScrollFactor(0)
         .setDepth(100);
 
+        this.add.text(
+            35,
+            91,
+            IS_TOUCH_DEVICE
+                ? "◀ ▶ GERAK   ▲ LOMPAT"
+                : "← → GERAK   SPACE / ↑ LOMPAT   P / ESC = PAUSE",
+            {
+                fontFamily:
+                    "Arial",
+
+                fontSize:
+                    "13px",
+
+                color:
+                    "#ffffff"
+            }
+        )
+        .setScrollFactor(0)
+        .setDepth(100);
+
         this.scoreText =
             this.add.text(
                 705,
@@ -3300,7 +3437,9 @@ class GameScene extends Phaser.Scene {
             )
             .setScrollFactor(0)
             .setDepth(160)
-            .setInteractive();
+            .setInteractive({
+                useHandCursor: true
+            });
 
         pause.on(
             "pointerdown",
@@ -3339,7 +3478,9 @@ class GameScene extends Phaser.Scene {
             )
             .setScrollFactor(0)
             .setDepth(160)
-            .setInteractive();
+            .setInteractive({
+                useHandCursor: true
+            });
 
         sound.on(
             "pointerdown",
@@ -3354,6 +3495,10 @@ class GameScene extends Phaser.Scene {
                         ? "🔊 ON"
                         : "🔇 OFF"
                 );
+
+                if (soundEnabled) {
+                    SFX.button();
+                }
             }
         );
 
@@ -3406,8 +3551,14 @@ class GameScene extends Phaser.Scene {
             520,
             "◀",
             {
-                fontSize: "32px",
-                color: "#fff"
+                fontFamily:
+                    "Arial",
+
+                fontSize:
+                    "32px",
+
+                color:
+                    "#ffffff"
             }
         )
         .setOrigin(0.5)
@@ -3419,8 +3570,14 @@ class GameScene extends Phaser.Scene {
             520,
             "▶",
             {
-                fontSize: "32px",
-                color: "#fff"
+                fontFamily:
+                    "Arial",
+
+                fontSize:
+                    "32px",
+
+                color:
+                    "#ffffff"
             }
         )
         .setOrigin(0.5)
@@ -3432,8 +3589,14 @@ class GameScene extends Phaser.Scene {
             510,
             "▲",
             {
-                fontSize: "31px",
-                color: "#fff"
+                fontFamily:
+                    "Arial",
+
+                fontSize:
+                    "31px",
+
+                color:
+                    "#ffffff"
             }
         )
         .setOrigin(0.5)
@@ -3442,51 +3605,66 @@ class GameScene extends Phaser.Scene {
 
         left.on(
             "pointerdown",
-            () =>
+            () => {
                 this.mobileInput.left =
-                    true
+                    true;
+            }
         );
 
         left.on(
             "pointerup",
-            () =>
+            () => {
                 this.mobileInput.left =
-                    false
+                    false;
+            }
         );
 
         left.on(
             "pointerout",
-            () =>
+            () => {
                 this.mobileInput.left =
-                    false
+                    false;
+            }
         );
 
         right.on(
             "pointerdown",
-            () =>
+            () => {
                 this.mobileInput.right =
-                    true
+                    true;
+            }
         );
 
         right.on(
             "pointerup",
-            () =>
+            () => {
                 this.mobileInput.right =
-                    false
+                    false;
+            }
         );
 
         right.on(
             "pointerout",
-            () =>
+            () => {
                 this.mobileInput.right =
-                    false
+                    false;
+            }
         );
 
         jump.on(
             "pointerdown",
-            () =>
+            () => {
                 this.mobileInput.jump =
-                    true
+                    true;
+            }
+        );
+
+        jump.on(
+            "pointerup",
+            () => {
+                this.mobileInput.jump =
+                    false;
+            }
         );
     }
 
@@ -3516,11 +3694,18 @@ class GameScene extends Phaser.Scene {
 
         SFX.hit();
 
+        this.cameras.main.shake(
+            150,
+            0.006
+        );
+
         this.lives--;
 
         this.updateLives();
 
-        if (this.lives <= 0) {
+        if (
+            this.lives <= 0
+        ) {
             this.showGameOver();
             return;
         }
@@ -3529,8 +3714,16 @@ class GameScene extends Phaser.Scene {
     }
 
     respawnPlayer() {
+        if (this.respawning) {
+            return;
+        }
+
         this.respawning = true;
         this.invulnerable = true;
+
+        this.mobileInput.left = false;
+        this.mobileInput.right = false;
+        this.mobileInput.jump = false;
 
         this.tweens.killTweensOf(
             this.playerSprite
@@ -3577,6 +3770,15 @@ class GameScene extends Phaser.Scene {
 
                 this.syncPlayerVisual();
 
+                this.cameras.main.scrollX =
+                    Phaser.Math.Clamp(
+                        this.checkpointX -
+                            350,
+                        0,
+                        this.level.worldWidth -
+                            GAME_WIDTH
+                    );
+
                 this.respawning =
                     false;
 
@@ -3608,6 +3810,13 @@ class GameScene extends Phaser.Scene {
     }
 
     syncPlayerVisual() {
+        if (
+            !this.playerBody ||
+            !this.playerBody.body
+        ) {
+            return;
+        }
+
         this.playerSprite
             .setPosition(
                 this.playerBody.x,
@@ -3626,7 +3835,9 @@ class GameScene extends Phaser.Scene {
             this.gameFinished ||
             this.gameOverActive ||
             this.respawning
-        ) return;
+        ) {
+            return;
+        }
 
         if (this.isPaused) {
             this.resumeGame();
@@ -3636,7 +3847,15 @@ class GameScene extends Phaser.Scene {
     }
 
     pauseGame() {
+        if (this.isPaused) {
+            return;
+        }
+
         this.isPaused = true;
+
+        this.mobileInput.left = false;
+        this.mobileInput.right = false;
+        this.mobileInput.jump = false;
 
         this.physics.pause();
 
@@ -3658,6 +3877,9 @@ class GameScene extends Phaser.Scene {
                 150,
                 "PAUSED",
                 {
+                    fontFamily:
+                        "Arial",
+
                     fontSize:
                         "48px",
 
@@ -3679,7 +3901,7 @@ class GameScene extends Phaser.Scene {
                 270,
                 280,
                 58,
-                "LANJUTKAN",
+                "▶ LANJUTKAN",
                 () =>
                     this.resumeGame(),
                 {
@@ -3688,14 +3910,43 @@ class GameScene extends Phaser.Scene {
                 }
             );
 
-        const menu =
+        const restart =
             createButton(
                 this,
                 500,
                 350,
                 280,
                 58,
-                "KEMBALI KE MENU",
+                "↻ ULANGI LEVEL",
+                () => {
+                    this.physics.resume();
+
+                    this.scene.restart({
+                        levelId:
+                            this.levelId
+                    });
+                },
+                {
+                    fixed: true,
+
+                    depth: 1002,
+
+                    color:
+                        0x986128,
+
+                    stroke:
+                        0x623d18
+                }
+            );
+
+        const menu =
+            createButton(
+                this,
+                500,
+                430,
+                280,
+                58,
+                "⌂ KEMBALI KE MENU",
                 () => {
                     this.physics.resume();
 
@@ -3720,23 +3971,28 @@ class GameScene extends Phaser.Scene {
             overlay,
             title,
             ...resume,
+            ...restart,
             ...menu
         ];
     }
 
     resumeGame() {
+        if (!this.isPaused) {
+            return;
+        }
+
         this.isPaused = false;
 
         this.physics.resume();
 
         this.pauseObjects
             .forEach(
-                item => {
+                object => {
                     if (
-                        item &&
-                        item.active
+                        object &&
+                        object.active
                     ) {
-                        item.destroy();
+                        object.destroy();
                     }
                 }
             );
@@ -3745,21 +4001,44 @@ class GameScene extends Phaser.Scene {
     }
 
     showGameOver() {
+        if (
+            this.gameOverActive
+        ) {
+            return;
+        }
+
         this.gameOverActive = true;
+
+        this.tweens.killTweensOf(
+            this.playerSprite
+        );
+
+        this.playerSprite
+            .setAlpha(1);
 
         this.playerBody.body.enable =
             false;
 
         this.resultPanel(
             "GAME OVER",
+            false,
             false
         );
     }
 
     async finishLevel() {
-        if (this.gameFinished) return;
+        if (this.gameFinished) {
+            return;
+        }
 
         this.gameFinished = true;
+
+        this.tweens.killTweensOf(
+            this.playerSprite
+        );
+
+        this.playerSprite
+            .setAlpha(1);
 
         this.playerBody.body
             .setVelocity(0, 0);
@@ -3767,14 +4046,18 @@ class GameScene extends Phaser.Scene {
         SFX.finish();
 
         if (
-            this.levelId === "1-1"
+            this.levelId ===
+            "1-1"
         ) {
             const progress =
                 loadProgress();
 
-            progress.world12 = true;
+            progress.world12 =
+                true;
 
-            saveProgress(progress);
+            saveProgress(
+                progress
+            );
         }
 
         submitLocalScore(
@@ -3823,9 +4106,12 @@ class GameScene extends Phaser.Scene {
 
         this.add.text(
             500,
-            160,
+            145,
             title,
             {
+                fontFamily:
+                    "Arial",
+
                 fontSize:
                     "32px",
 
@@ -3842,11 +4128,58 @@ class GameScene extends Phaser.Scene {
 
         this.add.text(
             500,
-            225,
+            205,
+            `PLAYER: ${this.playerName}`,
+            {
+                fontFamily:
+                    "Arial",
+
+                fontSize:
+                    "16px",
+
+                fontStyle:
+                    "bold",
+
+                color:
+                    "#ffffff"
+            }
+        )
+        .setOrigin(0.5)
+        .setScrollFactor(0)
+        .setDepth(1101);
+
+        this.add.text(
+            500,
+            245,
             `57 POINTS: ${this.score}`,
             {
+                fontFamily:
+                    "Arial",
+
                 fontSize:
                     "24px",
+
+                fontStyle:
+                    "bold",
+
+                color:
+                    "#ffffff"
+            }
+        )
+        .setOrigin(0.5)
+        .setScrollFactor(0)
+        .setDepth(1101);
+
+        this.add.text(
+            500,
+            285,
+            `SISA NYAWA: ${this.lives}`,
+            {
+                fontFamily:
+                    "Arial",
+
+                fontSize:
+                    "18px",
 
                 color:
                     "#ffffff"
@@ -3859,11 +4192,14 @@ class GameScene extends Phaser.Scene {
         if (completed) {
             this.add.text(
                 500,
-                285,
+                325,
                 uploaded
                     ? "✓ SKOR TERSIMPAN ONLINE"
                     : "✓ SKOR TERSIMPAN LOKAL",
                 {
+                    fontFamily:
+                        "Arial",
+
                     fontSize:
                         "16px",
 
@@ -3919,7 +4255,10 @@ class GameScene extends Phaser.Scene {
                     0x986128,
 
                 stroke:
-                    0x623d18
+                    0x623d18,
+
+                fontSize:
+                    "15px"
             }
         );
 
@@ -3944,7 +4283,11 @@ class GameScene extends Phaser.Scene {
                     ),
                 {
                     fixed: true,
-                    depth: 1102
+
+                    depth: 1102,
+
+                    fontSize:
+                        "16px"
                 }
             );
         } else {
@@ -3968,7 +4311,10 @@ class GameScene extends Phaser.Scene {
                         0x3f4650,
 
                     stroke:
-                        0x262b31
+                        0x262b31,
+
+                    fontSize:
+                        "15px"
                 }
             );
         }
@@ -3986,6 +4332,7 @@ class GameScene extends Phaser.Scene {
                 );
 
         if (pausePressed) {
+            SFX.button();
             this.togglePause();
         }
 
@@ -4004,7 +4351,8 @@ class GameScene extends Phaser.Scene {
         }
 
         if (
-            this.playerBody.y > 700
+            this.playerBody.y >
+            700
         ) {
             this.loseLife();
             return;
@@ -4073,7 +4421,7 @@ class GameScene extends Phaser.Scene {
                 );
         }
 
-        const mobileJump =
+        const mobileJumpPressed =
             this.mobileInput.jump;
 
         this.mobileInput.jump =
@@ -4088,7 +4436,7 @@ class GameScene extends Phaser.Scene {
                 .JustDown(
                     this.cursors.space
                 ) ||
-            mobileJump;
+            mobileJumpPressed;
 
         if (
             jumpPressed &&
@@ -4105,19 +4453,45 @@ class GameScene extends Phaser.Scene {
         if (!onGround) {
             this.playerSprite.stop();
 
+            if (
+                this.playerBody.body
+                    .velocity.y < 0
+            ) {
+                this.playerSprite
+                    .setTexture(
+                        "jago-run-4"
+                    )
+                    .setAngle(
+                        this.facingLeft
+                            ? -6
+                            : 6
+                    );
+            } else {
+                this.playerSprite
+                    .setTexture(
+                        "jago-run-5"
+                    )
+                    .setAngle(
+                        this.facingLeft
+                            ? 4
+                            : -4
+                    );
+            }
+
             this.playerSprite
-                .setTexture(
-                    this.playerBody.body
-                        .velocity.y < 0
-                        ? "jago-run-4"
-                        : "jago-run-5"
-                )
                 .setFlipX(
                     this.facingLeft
                 );
+        } else {
+            this.playerSprite
+                .setAngle(0);
         }
 
-        if (!this.invulnerable) {
+        if (
+            !this.invulnerable &&
+            this.playerSprite.alpha !==
+                1
+        ) {
             this.playerSprite
                 .setAlpha(1);
         }
@@ -4146,16 +4520,20 @@ class GameScene extends Phaser.Scene {
 }
 
 // =====================================================
-// RESPONSIVE GAME CONFIG
+// RESPONSIVE CONFIG
 // =====================================================
 
 const gameConfig = {
     type: Phaser.AUTO,
 
-    width: GAME_WIDTH,
-    height: GAME_HEIGHT,
+    width:
+        GAME_WIDTH,
 
-    parent: "game-container",
+    height:
+        GAME_HEIGHT,
+
+    parent:
+        "game-container",
 
     backgroundColor:
         "#07111f",
@@ -4175,7 +4553,8 @@ const gameConfig = {
     },
 
     physics: {
-        default: "arcade",
+        default:
+            "arcade",
 
         arcade: {
             gravity: {
@@ -4197,18 +4576,20 @@ const gameConfig = {
 };
 
 // =====================================================
-// SAFE PHASER START
+// SAFE START
 // MENCEGAH CANVAS DOBEL SAAT VITE HOT RELOAD
 // =====================================================
 
-// Hancurkan game lama terlebih dahulu
-if (window.__JAGO57_GAME__) {
+if (
+    window.__JAGO57_GAME__
+) {
     try {
-        window.__JAGO57_GAME__
+        window
+            .__JAGO57_GAME__
             .destroy(true);
     } catch (error) {
         console.warn(
-            "Old game cleanup:",
+            "Old Phaser game cleanup:",
             error
         );
     }
@@ -4217,7 +4598,6 @@ if (window.__JAGO57_GAME__) {
         null;
 }
 
-// Bersihkan canvas lama
 const gameContainer =
     document.getElementById(
         "game-container"
@@ -4227,13 +4607,11 @@ if (gameContainer) {
     gameContainer.replaceChildren();
 }
 
-// Buat hanya SATU game
 window.__JAGO57_GAME__ =
     new Phaser.Game(
         gameConfig
     );
 
-// Bersihkan otomatis saat Vite reload
 if (import.meta.hot) {
     import.meta.hot.dispose(
         () => {
@@ -4256,8 +4634,7 @@ if (import.meta.hot) {
                 );
 
             if (container) {
-                container
-                    .replaceChildren();
+                container.replaceChildren();
             }
         }
     );
